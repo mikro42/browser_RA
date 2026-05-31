@@ -17,6 +17,11 @@ Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
 Soweit also ein guter Startpunkt für Branches 😉
 
 ---
+## Live-Demo
+
+[▶️ browser_RA im Browser ausführen](https://mikro42.github.io/browser_RA/browser_RA.html)
+
+---
 
 ## Features (bisher)
 
