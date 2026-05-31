@@ -1,13 +1,56 @@
 # browser_RA
-open_RA Game Clone in html
 
-##browser_RA - Ein einfacher openRA Clone und meine Art die aktuellen Konflikte zu verarbeiten.
-Alles in einer .html Datei und dicht am Original. Komplett per Linksklick bedienbar. 
-Die eigene Basis aufzubauen ist weitgehend implementiert. Aktuell mit nur wenigen Gebäuden und Einheiten. Aber die Abhängigkeitsketten funktionieren. Erweiterungen sind leicht machbar.
-Gegner lassen sich im Startmenü bereits einstellen. Auf dem Spielfeld gibt es noch nicht. Auch eigene Einheiten haben keinerlei militärische Eigenschaften.
-Soweit also ein guter Startpunkt für Branches ;-)
+Ein einfacher OpenRA‑Clone im Browser.  
+Meine Art, die aktuellen Konflikte zu verarbeiten.
 
-##Nächste Schritte für mich (oder Dich, wenn Du unterstützen möchtest):
-1. Die Gegner bauen ihre Basis auf und produzieren anteilig auch mobile Einheiten.
-2. Erweiterung um militärische Eigenschaften (Panzerung; Reichweite; Schlagkraft gegen See, Land Leute, Land Fahrzeuge, Luft; Schussfrequenz). Möglichkeit zum Angriff. Heilung und Reparatur.
-2. Das Spielfeld wird (von 32x32) auf 64x64 vergrößert. Dadurch kann nur jeweils ein Ausschnitt sichtbar sein. Scrollen muss also möglich sein. Das Radar sollte als Übersicht und zur Navigation funktionieren.
+Alles steckt in einer einzigen `.html`‑Datei und bleibt dicht am Original.  
+Die Bedienung erfolgt komplett per Linksklick.
+
+Die eigene Basis aufzubauen ist weitgehend implementiert.  
+Aktuell gibt es nur wenige Gebäude und Einheiten, aber die Abhängigkeitsketten funktionieren.  
+Erweiterungen sind leicht machbar.
+
+Gegner lassen sich im Startmenü bereits einstellen.  
+Auf dem Spielfeld existieren sie noch nicht.  
+Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
+
+Soweit also ein guter Startpunkt für Branches 😉
+
+---
+
+## Features (bisher)
+
+- Eine einzige HTML‑Datei
+- Bedienung vollständig per Linksklick
+- Basisbau weitgehend implementiert
+- Erste Gebäude und Einheiten vorhanden
+- Funktionierende Abhängigkeitsketten
+- Gegner im Startmenü auswählbar
+
+---
+
+## Nächste Schritte
+
+1. **Gegner‑KI**
+   - Gegner bauen ihre Basis selbstständig auf  
+   - Produktion eigener mobiler Einheiten  
+   - Verhältnislogik für verschiedene Einheitentypen  
+
+2. **Militärische Eigenschaften**
+   - Panzerung  
+   - Reichweite  
+   - Schlagkraft gegen See, Land‑Infanterie, Land‑Fahrzeuge, Luft  
+   - Schussfrequenz  
+   - Angriffsfähigkeit  
+   - Heilung & Reparatur  
+
+3. **Spielfeld vergrößern**
+   - Von 32×32 auf 64×64  
+   - Nur ein Ausschnitt sichtbar → Scrollen notwendig  
+   - Radar als Übersicht und Navigation  
+
+---
+
+## Mitmachen
+
+Pull Requests, Ideen und Erweiterungen sind willkommen.  
