@@ -10,16 +10,15 @@ Die eigene Basis aufzubauen ist weitgehend implementiert.
 Aktuell gibt es nur wenige Gebäude und Einheiten, aber die Abhängigkeitsketten funktionieren.  
 Erweiterungen sind leicht machbar.
 
-Gegner lassen sich im Startmenü bereits einstellen.  
-Auf dem Spielfeld existieren sie noch nicht.  
+Gegner lassen sich im Startmenü bereits einstellen. Auf dem Spielfeld existieren sie noch nicht.  
 Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
-
-Soweit also ein guter Startpunkt für Branches 😉
 
 ---
 ## Live-Demo
 
-[▶️ browser_RA im Browser ausführen](https://mikro42.github.io/browser_RA/browser_RA.html)
+<a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
+
+Soweit also ein guter Startpunkt für Branches 😉
 
 ---
 
