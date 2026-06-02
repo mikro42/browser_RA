@@ -1,6 +1,7 @@
 # browser_RA
 
-Ein einfacher OpenRA‑Clone im Browser.  
+Ein einfacher OpenRA‑Clone im Browser.
+Wer's noch nicht kennt: Ein Echtzeitstrategie-Spiel, Basis bauen, kämpfen, mit Sicht von oben.
 Meine Art, die aktuellen Konflikte zu verarbeiten.
 
 Alles steckt in einer einzigen `.html`‑Datei und bleibt dicht am Original.  
@@ -53,6 +54,12 @@ Soweit also ein guter Startpunkt für Branches 😉
    - Nur ein Ausschnitt sichtbar → Scrollen notwendig  
    - Radar als Übersicht und Navigation  
 
+4. **Karten**
+   - kleine Auswahl von Geländekarten um nicht nur auf dem Rasen zu spielen
+
+5. **Spielfeld-Layer**
+   - Nach Einführung von Karten kann auch die Marine umgesetzt werden, die aktuell über den Rasen fahren müsste.
+   - Auch die Luftstreitkräfte sollten ihre eigene Flugebene bekommen um über Gebäude zu fliegen statt drumherum fahren zu müssen.
 ---
 
 ## Mitmachen
