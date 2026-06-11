@@ -17,8 +17,11 @@ Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
 ---
 ## Live-Demo
 
-<a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
+v0.2 auch Basisaufbau AI Spieler
+<a href="https://mikro42.github.io/browser_RA/browser_RA2.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
 
+v0.1 Basisaufbau Spieler
+<a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
 Soweit also ein guter Startpunkt für Branches 😉
 
 ---
@@ -39,7 +42,7 @@ Soweit also ein guter Startpunkt für Branches 😉
 1. **Gegner‑KI**
    - Gegner bauen ihre Basis selbstständig auf  
    - Produktion eigener mobiler Einheiten  
-   - Verhältnislogik für verschiedene Einheitentypen  
+   - Verhaltenslogik für verschiedene Einheitentypen  
 
 2. **Militärische Eigenschaften**
    - Panzerung  
