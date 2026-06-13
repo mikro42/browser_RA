@@ -550,9 +550,10 @@
                 <!-- Header Row -->
                 <div class="config-header">
                     <div class="config-name" style="margin-left: 100px;">Name</div>
-                    <div class="config-color" style="margin-left: 40px;">Color</div>
-                    <div class="config-fraction" style="margin-left: 10px;">Fraction</div>
-                    <div class="config-spawn" style="margin-left: 10px;">Spawn</div>
+                    <div class="config-color" style="width: 70px; margin-left: 30px;">Color</div>
+                    <div class="config-fraction" style="width: 70px; margin-left: 10px;">Fraction</div>
+                    <div class="config-team" style="width: 80px; margin-left: 10px;">Team</div>
+                    <div class="config-spawn" style="width: 60px; margin-left: 10px;">Spawn</div>
                 </div>
                 
                 <!-- Human Player Row -->
@@ -569,12 +570,19 @@
                         <option value="magenta">🟪🟪🟪</option>
                         <option value="black">⬛⬛⬛</option>
                     </select>
-                    <select class="config-select" id="config-human-fraction" style="width: 110px; margin-left: 10px;">
+                    <select class="config-select" id="config-human-fraction" style="width: 80px; margin-left: 10px;">
                         <option value="0" selected>Random</option>
                         <option value="1">Ukraine</option>
                         <option value="2">Russia</option>
                         <option value="3">US</option>
                         <option value="4">Iran</option>
+                    </select>
+                    <select class="config-select" id="config-human-team" style="width: 60px; margin-left: 10px;">
+                        <option value="-" selected>-</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
                     </select>
                     <select class="config-select" id="config-human-spawn">
                         <option value="A">A (Top-Left)</option>
@@ -604,12 +612,19 @@
                         <option value="magenta">🟪🟪🟪</option>
                         <option value="black">⬛⬛⬛</option>
                     </select>
-                    <select class="config-select" id="config-ai1-fraction" style="width: 110px; margin-left: 10px;">
+                    <select class="config-select" id="config-ai1-fraction" style="width: 80px; margin-left: 10px;">
                         <option value="0">Random</option>
                         <option value="1">Ukraine</option>
                         <option value="2">Russia</option>
                         <option value="3">US</option>
                         <option value="4">Iran</option>
+                    </select>
+                    <select class="config-select" id="config-ai1-team" style="width: 60px; margin-left: 10px;">
+                        <option value="-" selected>-</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
                     </select>
                     <select class="config-select" id="config-ai1-spawn">
                         <option value="A">A (Top-Left)</option>
@@ -639,12 +654,19 @@
                         <option value="magenta">🟪🟪🟪</option>
                         <option value="black">⬛⬛⬛</option>
                     </select>
-                    <select class="config-select" id="config-ai2-fraction" style="width: 110px; margin-left: 10px;">
+                    <select class="config-select" id="config-ai2-fraction" style="width: 80px; margin-left: 10px;">
                         <option value="0">Random</option>
                         <option value="1">Ukraine</option>
                         <option value="2">Russia</option>
                         <option value="3">US</option>
                         <option value="4">Iran</option>
+                    </select>
+                    <select class="config-select" id="config-ai2-team" style="width: 60px; margin-left: 10px;">
+                        <option value="-" selected>-</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
                     </select>
                     <select class="config-select" id="config-ai2-spawn">
                         <option value="A">A (Top-Left)</option>
@@ -674,12 +696,19 @@
                         <option value="magenta">🟪🟪🟪</option>
                         <option value="black">⬛⬛⬛</option>
                     </select>
-                    <select class="config-select" id="config-ai3-fraction" style="width: 110px; margin-left: 10px;">
+                    <select class="config-select" id="config-ai3-fraction" style="width: 80px; margin-left: 10px;">
                         <option value="0">Random</option>
                         <option value="1">Ukraine</option>
                         <option value="2">Russia</option>
                         <option value="3">US</option>
                         <option value="4">Iran</option>
+                    </select>
+                    <select class="config-select" id="config-ai3-team" style="width: 60px; margin-left: 10px;">
+                        <option value="-" selected>-</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
                     </select>
                     <select class="config-select" id="config-ai3-spawn">
                         <option value="A">A (Top-Left)</option>
@@ -1904,7 +1933,8 @@ class Game {
                 harvest: 0,
                 harvestLimit: 0,
                 unitBuild: 0,
-                credits: gameConfig.startingCash
+                credits: gameConfig.startingCash,
+                energyBalance: 0 // Pro-Spieler Energiekonto
             };
         });
 
@@ -1914,7 +1944,7 @@ class Game {
         }, {});
 
         // Player aliases for backward compatibility
-        this.energyBalance = 0; // Energy balance of the base
+//todo löschen        this.energyBalance = 0; // Energy balance of the base
         this.startTime = Date.now(); // Game start time for duration tracking
         this.constructedBuildings = []; // IDs gebauter Gebäude für Prereqs
         this.refineryCount = 0; // Count of refineries built
@@ -2038,11 +2068,12 @@ class Game {
         const creditsInfo = document.getElementById('credits-info');
         if (creditsInfo) creditsInfo.innerText = this.getAccount(0).credits;
         
-        // Update energy display
+        // Update energy display (nur für Human Player Index 0 sichtbar)
         const energyDisplay = document.getElementById('energy-display');
         const energyCell = document.getElementById('energy-cell');
-        energyDisplay.innerText = this.energyBalance;
-        if (this.energyBalance < 0) {
+        const humanEnergy = this.accounts[0]?.energyBalance ?? 0;
+        energyDisplay.innerText = humanEnergy;
+        if (humanEnergy < 0) {
             energyCell.classList.add('low-power');
         } else {
             energyCell.classList.remove('low-power');
@@ -2162,28 +2193,33 @@ class Game {
     }
 
     recalculateBaseEconomy() {
-        let energyBalance = 0;
-        let creditsLimit = 0;
-        let refineryCount = 0;
+        // 1. Energie & Lagerlimits für alle Spieler zurücksetzen
+        for (const acc of this.accounts) {
+            acc.energyBalance = 0;
+            acc.harvestLimit = 0;
+        }
 
+        // 2. Gebäude durchgehen und Werte dem richtigen Eigentümer-Konto zuordnen
         for (const building of this.buildings) {
             const typeData = this.getBuildingTypeById(building.name);
             if (!typeData) continue;
 
-            energyBalance += typeData.energy || 0;
-            creditsLimit += this.getStorageBonusForBuilding(building.name);
-            if (getBaseTypeId(building.name) === 'refinery') refineryCount++;
+            // Konto finden, das zum Gebäude-Eigentümer-Typ passt
+            const acc = this.accounts.find(a => a.type === building.owner);
+            if (!acc) continue;
+
+            acc.energyBalance += typeData.energy || 0;
+            acc.harvestLimit += this.getStorageBonusForBuilding(building.name);
         }
 
-        this.energyBalance = energyBalance;
-        this.refineryCount = refineryCount;
-        this.buildingsUnlocked = this.hasBuildingType('constructionyard');
+        // 3. Harvest clampen & Credits für alle Spieler aktualisieren
+        for (const acc of this.accounts) {
+            acc.harvest = Math.min(acc.harvest, acc.harvestLimit);
+            this.recalculateCredits(acc);
+        }
 
-        const playerAccount = this.getAccount(0);
-        playerAccount.harvestLimit = creditsLimit;
-        playerAccount.harvest = Math.min(playerAccount.harvest, playerAccount.harvestLimit);
-        this.recalculateCredits(playerAccount);
-        this.updateGameDisplay();
+        this.buildingsUnlocked = this.hasBuildingType('constructionyard');
+        this.updateGameDisplay(); // UI zeigt weiterhin Human (Index 0) an
     }
 
     updateCursorState() {
@@ -2440,10 +2476,14 @@ class Game {
         const isDefenseType = !!(buildingType && DEFENSE_TYPES[buildingType.id]);
         if (buildingType && (buildingsMenuBaseIds.includes(getBaseTypeId(buildingType.id)) || buildingsMenuBaseIds.includes(buildingType.baseId) || isDefenseType)) {
             // Check distance to other Building menu buildings, gefiltert nach dem platzierenden Owner
+            const currentTeamId = placingOwner === 'human' ? gameConfig.players[0].team_id : null;
             const otherBuildingsMenu = this.buildings.filter(b => {
                 const bBaseId = getBaseTypeId(b.name);
                 if (!buildingsMenuBaseIds.includes(bBaseId)) return false;
-                if (placingOwner && b.owner !== placingOwner) return false; // Nur Gebäude des platzierenden Spielers zählen
+                // Erlaube eigene Gebäude ODER Gebäude von Teammitgliedern
+                if (placingOwner && b.owner !== placingOwner) {
+                    if (!b.ownerData || b.ownerData.team_id !== currentTeamId) return false;
+                }
                 return true;
             });
 
@@ -2794,7 +2834,9 @@ class Game {
     }
 
     getProductionSpeedFactor(playerIndex = 0) {
-        const energyFactor = this.energyBalance < 0 ? (1 / 3) : 1;
+        const acc = this.accounts[playerIndex];
+        // Energie-Defizit verlangsamt Produktion um Faktor 3 (1/3 Geschwindigkeit)
+        const energyFactor = (acc && acc.energyBalance < 0) ? (1 / 3) : 1;
         return energyFactor / gameConfig.players[playerIndex].productionFactor;
     }
 
@@ -4660,8 +4702,11 @@ class Game {
         // Weiche Bedingung (nur Nicht-Defense): Max. 1 Kachel Lücke zu eigenen Hauptgebäuden
         if (!isDefenseType) {
             const mainBuildingBaseIds = ['constructionyard', 'powerplant', 'barracks', 'refinery', 'warfactory', 'radar', 'helipad'];
+            const currentTeamId = aiPlayer.team_id;
             const myMainBuildings = this.buildings.filter(b => {
-                if (!b.ownerData || b.ownerData.spawn !== aiPlayer.spawn) return false;
+                if (!b.ownerData) return false;
+                // Erlaube eigene Gebäude ODER Gebäude von Teammitgliedern (gleiche team_id)
+                if (b.ownerData.spawn !== aiPlayer.spawn && b.ownerData.team_id !== currentTeamId) return false;
                 return mainBuildingBaseIds.includes(getBaseTypeId(b.name));
             });
 
@@ -5263,10 +5308,10 @@ class InputManager {
 // Configuration data
 let gameConfig = {
     players: [
-        { name: 'Commander', color: 'green', spawn: 'A', type: 'human', fraction: 0 },
-        { name: 'AI 1', color: 'red', spawn: 'C', type: 'Naval-AI', fraction: 0 },
-        { name: 'AI 2', color: 'blue', spawn: 'B', type: 'Open', fraction: 0 },
-        { name: 'AI 3', color: 'yellow', spawn: 'D', type: 'Open', fraction: 0 }
+        { name: 'Commander', color: 'green', spawn: 'A', type: 'human', fraction: 0, team: '-' },
+        { name: 'AI 1', color: 'red', spawn: 'C', type: 'Naval-AI', fraction: 0, team: '-' },
+        { name: 'AI 2', color: 'blue', spawn: 'B', type: 'Open', fraction: 0, team: '-' },
+        { name: 'AI 3', color: 'yellow', spawn: 'D', type: 'Open', fraction: 0, team: '-' }
     ],
     shortGame: false,
     limitedBuild: false,
@@ -5374,18 +5419,22 @@ function initConfigModal() {
     elems.humanColor.value = gameConfig.players[0].color;
     elems.humanSpawn.value = gameConfig.players[0].spawn;
     elems.humanFraction.value = gameConfig.players[0].fraction || 0;
+    document.getElementById('config-human-team').value = gameConfig.players[0].team || '-';
     elems.ai1Type.value = gameConfig.players[1].type;
     elems.ai1Color.value = gameConfig.players[1].color;
     elems.ai1Spawn.value = gameConfig.players[1].spawn;
     elems.ai1Fraction.value = gameConfig.players[1].fraction || 0;
+    document.getElementById('config-ai1-team').value = gameConfig.players[1].team || '-';
     elems.ai2Type.value = gameConfig.players[2].type;
     elems.ai2Color.value = gameConfig.players[2].color;
     elems.ai2Spawn.value = gameConfig.players[2].spawn;
     elems.ai2Fraction.value = gameConfig.players[2].fraction || 0;
+    document.getElementById('config-ai2-team').value = gameConfig.players[2].team || '-';
     elems.ai3Type.value = gameConfig.players[3].type;
     elems.ai3Color.value = gameConfig.players[3].color;
     elems.ai3Spawn.value = gameConfig.players[3].spawn;
     elems.ai3Fraction.value = gameConfig.players[3].fraction || 0;
+    document.getElementById('config-ai3-team').value = gameConfig.players[3].team || '-';
     elems.shortGame.checked = gameConfig.shortGame;
     elems.limitedBuild.checked = gameConfig.limitedBuild;
     elems.startingCash.value = gameConfig.startingCash;
@@ -5458,6 +5507,13 @@ function initConfigModal() {
 
     elems.humanFraction.addEventListener('change', (e) => {
         gameConfig.players[0].fraction = parseInt(e.target.value, 10) || 0;
+    });
+
+    // Team-Listener für alle Spieler
+    ['human', 'ai1', 'ai2', 'ai3'].forEach((key, idx) => {
+        document.getElementById(`config-${key}-team`).addEventListener('change', (e) => {
+            gameConfig.players[idx].team = e.target.value;
+        });
     });
 
     // AI 1 type change
@@ -5552,11 +5608,14 @@ function startGame() {
         }
     });
 
-    // Calculate game speed factors at start
-//todo löschen wenn Ersatz läuft    gameSpeedFactor = gameConfig.gameSpeed;  // For unit movement speed
-//    productionFactor = 4 / gameConfig.gameSpeed;  // For production time (inverse)
+    // Initialize team IDs (default to 9+index wenn nicht gewählt, um Kollisionen mit 1-4 zu vermeiden)
+    gameConfig.players.forEach((player, index) => {
+        let rawTeam = player.team ? parseInt(player.team, 10) : NaN;
+        player.team_id = (rawTeam >= 1 && rawTeam <= 4) ? rawTeam : (9 + index);
+    });
+
     // Calculate per-player speed/production factors based on config selections
-    const aiSpeedMap = { 'Open': 1, 'Rush-AI': 1, 'Normal-AI': 1.5, 'Turtle-AI': 2, 'Naval-AI': 3 };
+    const aiSpeedMap = { 'Open': 1, 'Rush-AI': 3, 'Normal-AI': 2, 'Turtle-AI': 1.5, 'Naval-AI': 1 };
     gameConfig.players.forEach((player, index) => {
         let rawValue;
         if (index === 0) {
