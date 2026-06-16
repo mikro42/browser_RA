@@ -17,10 +17,13 @@ Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
 ---
 ## Live-Demo
 
-v0.2 auch Basisaufbau AI Spieler
+v0.3 + mobile Einheiten AI Spieler auf Spielfeld (todo: noch etwas verbugt)
+<a href="https://mikro42.github.io/browser_RA/browser_RA3.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
+
+v0.2 + Basisaufbau AI Spieler
 <a href="https://mikro42.github.io/browser_RA/browser_RA2.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
 
-v0.1 Basisaufbau Spieler
+v0.1 Basisaufbau menschlicher Spieler
 <a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
 Soweit also ein guter Startpunkt für Branches 😉
 
