@@ -1207,10 +1207,10 @@ class Entity {
         this.y = y;
         if (owner && typeof owner === 'object') {
             this.ownerData = owner;
-            this.owner = owner.type || owner.name || 'human';
+            this.ownerIndex = gameConfig.players.indexOf(owner);
         } else {
             this.ownerData = null;
-            this.owner = owner;
+            this.ownerIndex = -1;
         }
         this.typeKey = typeKey || 'tank';
         
@@ -1393,9 +1393,10 @@ class Entity {
             return this.targetRefinery;
         }
 
-        // Nur Raffinerien des eigenen Besitzers als Ziel erlauben (dynamisch für Human & AI)
+        // Nur eigene Raffinerien als Ziel erlauben (index-basiert, robust gegen doppelte AI-Typen)
+        const myOwnerIndex = this.ownerIndex !== undefined ? this.ownerIndex : gameConfig.players.indexOf(this.ownerData);
         const nearest = buildings
-            .filter(b => getBaseTypeId(b.name) === 'refinery' && b.owner === this.owner)
+            .filter(b => getBaseTypeId(b.name) === 'refinery' && b.ownerIndex === myOwnerIndex)
             .sort((a, b) => {
                 const ca = getBuildingCenter(a);
                 const cb = getBuildingCenter(b);
@@ -1470,7 +1471,8 @@ class Entity {
             if (!this.unloadLastTick) this.unloadLastTick = now;
             const delta = Math.max(0, now - this.unloadLastTick);
             this.unloadLastTick = now;
-            const speedFactor = (game && typeof game.getProductionSpeedFactor === 'function') ? game.getProductionSpeedFactor() : 1;
+            const harvesterOwnerIdx = (this.ownerIndex !== undefined && this.ownerIndex >= 0) ? this.ownerIndex : 0;
+            const speedFactor = (game && typeof game.getProductionSpeedFactor === 'function') ? game.getProductionSpeedFactor(harvesterOwnerIdx) : 1;
             this.unloadProgressMs = Math.min(this.unloadDurationMs, this.unloadProgressMs + delta * speedFactor);
 
             const elapsedSec = Math.floor(this.unloadProgressMs / 1000);
@@ -1478,12 +1480,10 @@ class Entity {
 
             while (this.unloadTickIndex < payableTicks) {
                 // Bestimme das richtige Konto basierend auf dem Harvester-Eigentümer (Human oder AI)
-                const ownerIdx = gameConfig.players.indexOf(this.ownerData);
-                const targetAccount = (ownerIdx >= 0) ? game.getAccount(ownerIdx) : game.getAccount(0);
+                const targetAccount = (this.ownerIndex >= 0) ? game.getAccount(this.ownerIndex) : game.getAccount(0);
                 const harvestCreditResult = game.addHarvestCredits(this.unloadCreditsPerSecond, targetAccount);
                 if (harvestCreditResult.lost > 0) {
                     this.hitStorageLimitThisUnload = true;
-                    console.log('Silos needed');
                 }
                 this.unloadTickIndex++;
                 if (this.hitStorageLimitThisUnload) game.updateUI('Silos needed');
@@ -1500,12 +1500,11 @@ class Entity {
                 this.unloadProgressMs = 0;
                 this.unloadLastTick = 0;
 
-                // AI Economy: Transfer excess harvest credits to unitBuild if building queue is complete
-                const ownerIdx = gameConfig.players.indexOf(this.ownerData);
-                if (ownerIdx > 0 && game.npcAiState[ownerIdx]) {
-                    const aiState = game.npcAiState[ownerIdx];
+                // AI Economy: Transfer excess harvest credits to unitBuild if building queue is complete (index-basiert)
+                if (this.ownerIndex > 0 && game.npcAiState[this.ownerIndex]) {
+                    const aiState = game.npcAiState[this.ownerIndex];
                     if (aiState.nextBuildingIndex >= aiState.buildQueue.length) {
-                        const account = game.getAccount(ownerIdx);
+                        const account = game.getAccount(this.ownerIndex);
                         if (account.harvest > 2500) {
                             const transferAmount = account.harvest - 2500;
                             account.harvest -= transferAmount;
@@ -1653,7 +1652,7 @@ class Entity {
             ctx.fillRect(-10 * px, -this.radius - 8 * px, 20 * px, 3 * px);
         }
 
-        const color = this.playerColor || ((this.owner === gameConfig.players[0].type) ? '#4da6ff' : '#ff3333');
+        const color = this.playerColor || ((this.ownerIndex === 0) ? '#4da6ff' : '#ff3333');
 
         if(this.type === 'infantry') {
             const isCivilian = this.typeKey === 'civilian1' || this.typeKey === 'civilian2';
@@ -2083,7 +2082,6 @@ class Game {
                         return;
                     }
                     // Action buttons will be implemented as needed
-                    console.log(`Action: ${btnId}`);
                 });
             }
         });
@@ -2208,7 +2206,7 @@ class Game {
         // Nur Gebäude des menschlichen Spielers zählen für Prerequisites/UI-Updates
         return this.buildings.some(b => {
             if (!b || !b.name) return false;
-            if (b.owner !== gameConfig.players[0].type) return false; 
+            if (b.ownerIndex !== 0) return false;
             return b.name === typeId || getBaseTypeId(b.name) === normalizedId;
         });
     }
@@ -2241,13 +2239,15 @@ class Game {
             acc.harvestLimit = 0;
         }
 
-        // 2. Gebäude durchgehen und Werte dem richtigen Eigentümer-Konto zuordnen
+        // 2. Gebäude durchgehen und Werte dem richtigen Eigentümer-Konto zuordnen (index-basiert)
         for (const building of this.buildings) {
             const typeData = this.getBuildingTypeById(building.name);
             if (!typeData) continue;
 
-            // Konto finden, das zum Gebäude-Eigentümer-Typ passt
-            const acc = this.accounts.find(a => a.type === building.owner);
+            // Konto über ownerIndex finden (robust gegen doppelte AI-Typen)
+            const acc = (building.ownerIndex !== undefined && building.ownerIndex >= 0 && building.ownerIndex < this.accounts.length)
+                ? this.accounts[building.ownerIndex]
+                : this.accounts.find(a => a.type === building.owner);
             if (!acc) continue;
 
             acc.energyBalance += typeData.energy || 0;
@@ -2346,7 +2346,7 @@ class Game {
 
     sellBuildingAt(x, y) {
         const building = this.findBuildingAt(x, y);
-        if (!building || building.owner !== 'human') return false;
+        if (!building || building.ownerIndex !== 0) return false;
 
         const typeData = this.getBuildingTypeById(building.name);
         if (!typeData) return false;
@@ -2404,9 +2404,10 @@ class Game {
         // Ausnahme: Harvester-Dock in Raffinerie (Zeile 2 von unten, Mitte)
         if (unit.type === 'harvester' && allowRefineryDock) {
             // Try to match a refinery more leniently (clicking near or inside the building)
+            const unitOwnerIndex = unit.ownerIndex !== undefined ? unit.ownerIndex : gameConfig.players.indexOf(unit.ownerData);
             const clickedRefinery = this.buildings.find(b => {
-                if (b.baseId !== 'refinery') return false;
-                if (b.owner !== unit.owner) return false; // Nur eigene Raffinerien erlauben Docking/Auftrag
+                if (getBaseTypeId(b.name) !== 'refinery') return false;
+                if (b.ownerIndex !== unitOwnerIndex) return false; // Nur eigene Raffinerien erlauben Docking/Auftrag (index-basiert)
                 const rect = getBuildingPixelRect(b);
                 return distancePointToRect(targetX, targetY, rect) <= TILE_SIZE * 1.2;
             });
@@ -2436,7 +2437,8 @@ class Game {
         }
 
         // If the hit building is a refinery, return the dock position so harvesters get proper behaviour (nur wenn eigene Raffinerie)
-        if (getBaseTypeId(hitBuilding.name) === 'refinery' && hitBuilding.owner === unit.owner) {
+        const unitOwnerIdx = unit.ownerIndex !== undefined ? unit.ownerIndex : gameConfig.players.indexOf(unit.ownerData);
+        if (getBaseTypeId(hitBuilding.name) === 'refinery' && hitBuilding.ownerIndex === unitOwnerIdx) {
             const dock = this.getRefineryUnloadPoint(hitBuilding);
             return { x: dock.x, y: dock.y, allowEndInBlocked: true, refinery: hitBuilding };
         }
@@ -2501,7 +2503,7 @@ class Game {
     isPlacementFree(placement, options = {}) {
         const ignoreUnits = options.ignoreUnits || [];
         const buildingType = options.buildingType || null;
-        const placingOwner = options.owner || null; // Neuer Parameter: Wer platziert?
+        const placingOwnerIndex = options.ownerIndex !== undefined ? options.ownerIndex : null;
 
         // Check for overlap with existing buildings
         for (const building of this.buildings) {
@@ -2518,12 +2520,12 @@ class Game {
         const isDefenseType = !!(buildingType && DEFENSE_TYPES[buildingType.id]);
         if (buildingType && (buildingsMenuBaseIds.includes(getBaseTypeId(buildingType.id)) || buildingsMenuBaseIds.includes(buildingType.baseId) || isDefenseType)) {
             // Check distance to other Building menu buildings, gefiltert nach dem platzierenden Owner
-            const currentTeamId = placingOwner === 'human' ? gameConfig.players[0].team_id : null;
+            const currentTeamId = placingOwnerIndex !== null ? gameConfig.players[placingOwnerIndex].team_id : null;
             const otherBuildingsMenu = this.buildings.filter(b => {
                 const bBaseId = getBaseTypeId(b.name);
                 if (!buildingsMenuBaseIds.includes(bBaseId)) return false;
                 // Erlaube eigene Gebäude ODER Gebäude von Teammitgliedern
-                if (placingOwner && b.owner !== placingOwner) {
+                if (placingOwnerIndex !== null && b.ownerIndex !== placingOwnerIndex) {
                     if (!b.ownerData || b.ownerData.team_id !== currentTeamId) return false;
                 }
                 return true;
@@ -3186,7 +3188,7 @@ class Game {
         else if (category === 'aircraft') baseId = 'helipad';
         if (!baseId) return 0;
 
-        return this.buildings.filter(b => getBaseTypeId(b.name) === baseId && b.owner === 'human').length;
+        return this.buildings.filter(b => getBaseTypeId(b.name) === baseId && b.ownerIndex === 0).length;
     }
 
     // Lookup-Tabelle für Speed-Up basierend auf Gebäudeanzahl
@@ -3632,27 +3634,24 @@ class Game {
 
     spawnUnit(ownerIndex, unitId) {
         const baseId = getBaseTypeId(unitId);
-        // Finde passendes Gebäude für Spawn-Punkt
+        // Finde passendes Gebäude für Spawn-Punkt (index-basiert)
         let spawner = null;
-        
-        // Hole den Owner-Type ('human', 'ai1', etc.) basierend auf dem Index
-        const requestingOwnerType = gameConfig.players[ownerIndex].type;
 
         if (baseId === 'rifleman') {
-            // WICHTIG: Filtere explizit nach dem Eigentümer!
+            // WICHTIG: Filtere index-basiert nach dem Eigentümer!
             spawner = this.buildings.find(b =>
                 getBaseTypeId(b.name) === 'barracks' &&
-                b.owner === requestingOwnerType
+                b.ownerIndex === ownerIndex
             );
         } else if (baseId === 'tank' || baseId === 'harvester' || baseId === 'mobile_flak') {
             spawner = this.buildings.find(b =>
                 getBaseTypeId(b.name) === 'warfactory' &&
-                b.owner === requestingOwnerType
+                b.ownerIndex === ownerIndex
             );
         } else if (baseId === 'helicopter') {
             spawner = this.buildings.find(b =>
                 getBaseTypeId(b.name) === 'helipad' &&
-                b.owner === requestingOwnerType
+                b.ownerIndex === ownerIndex
             );
         }
 
@@ -3788,8 +3787,8 @@ class Game {
         line.textContent = data;
         logContainer.appendChild(line);
 
-        // Auf maximal 200 Einträge begrenzen (älteste werden entfernt)
-        while (logContainer.children.length > 200) {
+        // Auf maximal 50 Einträge begrenzen (älteste werden entfernt)
+        while (logContainer.children.length > 50) {
             logContainer.removeChild(logContainer.firstChild);
         }
 
@@ -3808,7 +3807,7 @@ class Game {
     handleRightClick(x, y) {
         if (this.placementMode && this.buildingToPlace) {
             const placement = this.getPlacementAt(x, y, this.buildingToPlace);
-            const canBuild = this.isPlacementFree(placement, { buildingType: this.buildingToPlace, owner: 'human' });
+            const canBuild = this.isPlacementFree(placement, { buildingType: this.buildingToPlace, ownerIndex: 0 });
             const state = this.getBuildingProductionState(this.buildingToPlace.id);
 
             if (canBuild.free && state.status === 'ready') {
@@ -3872,7 +3871,7 @@ class Game {
         if (!this.units.includes(unit)) return;
 
         const placement = this.getPlacementAt(unit.x, unit.y, CONSTRUCTION_YARD_TYPE);
-        const free = this.isPlacementFree(placement, { ignoreUnits: [unit], owner: 'human' });
+        const free = this.isPlacementFree(placement, { ignoreUnits: [unit], ownerIndex: 0 });
         if (!free.free) {
             this.updateUI('Kein Platz zum Aufbau der Bauanlage.');
             return;
@@ -3916,7 +3915,7 @@ class Game {
         }
 
         this.deselectAll();
-        if (clickedUnit && clickedUnit.owner === gameConfig.players[0].type) {
+        if (clickedUnit && clickedUnit.ownerIndex === 0) {
             clickedUnit.selected = true;
             this.selectedUnits.push(clickedUnit);
             
@@ -3939,7 +3938,7 @@ class Game {
 
         let count = 0;
         this.units.forEach(u => {
-            if (u.owner === gameConfig.players[0].type && u.x >= x1 && u.x <= x2 && u.y >= y1 && u.y <= y2) {
+            if (u.ownerIndex === 0 && u.x >= x1 && u.x <= x2 && u.y >= y1 && u.y <= y2) {
                 u.selected = true;
                 this.selectedUnits.push(u);
                 count++;
@@ -3956,7 +3955,7 @@ class Game {
 
         // Sammle alle Einheiten im Rechteck (nach Select-Prio filtern)
         const unitsInBox = this.units.filter(u => {
-            return u.owner === gameConfig.players[0].type &&  // Nur eigene Einheiten
+            return u.ownerIndex === 0 &&  // Nur eigene Einheiten
                    u.x >= x1 && u.x <= x2 && u.y >= y1 && u.y <= y2;  // Im Auswahlrechteck
         });
 
@@ -4041,7 +4040,7 @@ class Game {
         }
 
         // Direktklick auf MCV → sofort aufbauen (ohne vorherige Auswahl nötig)
-        if (clickedUnit && clickedUnit.typeKey === 'mcv' && clickedUnit.owner === gameConfig.players[0].type) {
+        if (clickedUnit && clickedUnit.typeKey === 'mcv' && clickedUnit.ownerIndex === 0) {
             this.deselectAll();
             this.deployMCV(clickedUnit);
             return;
@@ -4049,7 +4048,7 @@ class Game {
 
         if (this.selectedUnits.length > 0) {
             // Auf eigene Einheit geklickt → Auswahl wechseln
-            if (clickedUnit && clickedUnit.owner === gameConfig.players[0].type) {
+            if (clickedUnit && clickedUnit.ownerIndex === 0) {
                 this.deselectAll();
                 clickedUnit.selected = true;
                 this.selectedUnits.push(clickedUnit);
@@ -4090,7 +4089,7 @@ class Game {
 
         // Keine Einheiten ausgewählt – Einheit anklicken um sie auszuwählen, oder Silo
         this.deselectAll();
-        if (clickedUnit && clickedUnit.owner === gameConfig.players[0].type) {
+        if (clickedUnit && clickedUnit.ownerIndex === 0) {
             clickedUnit.selected = true;
             this.selectedUnits.push(clickedUnit);
             let info = `${UNIT_TYPES[clickedUnit.typeKey].name}`;
@@ -4579,6 +4578,7 @@ class Game {
                     if (elapsed >= totalTime) {
                         const finishedBuilding = aiState.currentBuilding;
                     this.buildings.push(finishedBuilding);
+                    this.recalculateBaseEconomy();
 
                     // Gewichtungsliste neu berechnen, falls ein Produktionsgebäude gebaut wurde
                     const baseTypeId = getBaseTypeId(finishedBuilding.name);
@@ -4731,7 +4731,6 @@ class Game {
             }
         }
 
-        console.log(`AI ${aiPlayer.name}: Kein Bauplatz für ${buildingType.name} gefunden.`);
         return null;
     }
 
@@ -4761,47 +4760,6 @@ class Game {
         return null;
     }
 
-    _isValidPlacement(placement, aiIndex, isDefenseType) {
-        const aiPlayer = gameConfig.players[aiIndex];
-
-        // Harte Randbedingung: Alle Teile müssen auf dem Spielfeld bleiben
-        if (placement.tileX < 0 || placement.tileY < 0 ||
-            placement.tileX + placement.widthTiles > this.cols ||
-            placement.tileY + placement.heightTiles > this.rows) return false;
-
-        // Harte Randbedingung: Keine Überschneidung zu Gebäuden anderer Spieler (und eigenen)
-        const result = this.isPlacementFree(placement, { buildingType: null, owner: aiPlayer.type });
-        if (!result.free) return false;
-
-        // Weiche Bedingung (nur Nicht-Defense): Max. 1 Kachel Lücke zu eigenen Hauptgebäuden
-        if (!isDefenseType) {
-            const mainBuildingBaseIds = ['constructionyard', 'powerplant', 'barracks', 'refinery', 'warfactory', 'radar', 'helipad'];
-            const currentTeamId = aiPlayer.team_id;
-            const myMainBuildings = this.buildings.filter(b => {
-                if (!b.ownerData) return false;
-                // Erlaube eigene Gebäude ODER Gebäude von Teammitgliedern (gleiche team_id)
-                if (b.ownerData.spawn !== aiPlayer.spawn && b.ownerData.team_id !== currentTeamId) return false;
-                return mainBuildingBaseIds.includes(getBaseTypeId(b.name));
-            });
-
-            if (myMainBuildings.length > 0) {
-                let withinDistance = false;
-                for (const other of myMainBuildings) {
-                    const otherGrid = getBuildingGridRect(other);
-                    
-                    // Lücke berechnen (Chebyshev-Distanz der Ränder)
-                    const hGap = Math.max(0, otherGrid.tileX - (placement.tileX + placement.widthTiles), placement.tileX - (otherGrid.tileX + otherGrid.widthTiles));
-                    const vGap = Math.max(0, otherGrid.tileY - (placement.tileY + placement.heightTiles), placement.tileY - (otherGrid.tileY + otherGrid.heightTiles));
-                    
-                    if (Math.max(hGap, vGap) <= 1) { withinDistance = true; break; }
-                }
-                if (!withinDistance) return false;
-            }
-        }
-
-        return true;
-    }
-
     _findPlacementAroundTile(centerTX, centerTY, buildingType, aiIndex, isDefenseType) {
         const bw = buildingType.widthTiles || 2;
         const bh = buildingType.heightTiles || 2;
@@ -4814,7 +4772,6 @@ class Game {
                 }
             }
         }
-        console.log(`AI: Kein Bauplatz für ${buildingType.name} gefunden (Spawn-Fallback).`);
         return null;
     }
 
@@ -4829,14 +4786,16 @@ class Game {
         }
 
         // Harte Randbedingung: Keine Überschneidung zu Gebäuden anderer Spieler (und eigenen)
-        const result = this.isPlacementFree(placement, { buildingType: null, owner: aiPlayer.type });
+        const result = this.isPlacementFree(placement, { buildingType: null, ownerIndex: aiIndex });
         if (!result.free) return false;
 
         // Weiche Bedingung: Distanz 0-1 Kachel zu eigenen Hauptgebäuden (nur für Nicht-Defense)
         if (!isDefenseType) {
             const mainBuildingBaseIds = ['constructionyard', 'powerplant', 'barracks', 'refinery', 'warfactory', 'radar', 'helipad'];
+            // Index-basierte Filterung: eigene Gebäude + Teammitglieder
+            const currentTeamId = aiPlayer.team_id;
             const myMainBuildings = this.buildings.filter(b => {
-                if (!b.ownerData || b.ownerData.spawn !== aiPlayer.spawn) return false;
+                if (b.ownerIndex !== aiIndex && (!b.ownerData || b.ownerData.team_id !== currentTeamId)) return false;
                 return mainBuildingBaseIds.includes(getBaseTypeId(b.name));
             });
 
@@ -5001,7 +4960,8 @@ class Game {
             color: colorMap[ownerData.color] || '#9e3a3a',
             owner: ownerData.type,
             ownerData,
-            fraction: ownerData.fraction
+            fraction: ownerData.fraction,
+            ownerIndex: playerIndex
         };
 
         // Nur eigene Fraktion zum Menü hinzufügen, nicht die der AI
@@ -5018,9 +4978,9 @@ class Game {
         let availableUnits = [];
 
         // Prüfe welche Produktionsgebäude existieren
-        const hasBarracks = this.buildings.some(b => getBaseTypeId(b.name) === 'barracks' && b.owner === aiPlayer.type);
-        const hasWarFactory = this.buildings.some(b => getBaseTypeId(b.name) === 'warfactory' && b.owner === aiPlayer.type);
-        const hasHelipad = this.buildings.some(b => getBaseTypeId(b.name) === 'helipad' && b.owner === aiPlayer.type);
+        const hasBarracks = this.buildings.some(b => getBaseTypeId(b.name) === 'barracks' && b.ownerIndex === aiIndex);
+        const hasWarFactory = this.buildings.some(b => getBaseTypeId(b.name) === 'warfactory' && b.ownerIndex === aiIndex);
+        const hasHelipad = this.buildings.some(b => getBaseTypeId(b.name) === 'helipad' && b.ownerIndex === aiIndex);
 
         Object.values(UNIT_TYPES).forEach(u => {
             // Harvester, MCV & Zivilisten aus der gewichteten Liste ausschließen
@@ -5061,8 +5021,8 @@ class Game {
             const aiPlayer = gameConfig.players[aiIndex];
 
             // Harvester-Mangel prüfen (< Raffinerien * 2)
-            const refineries = this.buildings.filter(b => getBaseTypeId(b.name) === 'refinery' && b.owner === aiPlayer.type);
-            const harvesters = this.units.filter(u => u.type === 'harvester' && u.owner === aiPlayer.type);
+            const refineries = this.buildings.filter(b => getBaseTypeId(b.name) === 'refinery' && b.ownerIndex === aiIndex);
+            const harvesters = this.units.filter(u => u.type === 'harvester' && u.ownerIndex === aiIndex);
             let targetUnitId = null;
 
             if (harvesters.length < refineries.length * 2) {
@@ -5121,11 +5081,11 @@ class Game {
         const baseId = getBaseTypeId(unitId);
 
         if (baseId === 'rifleman') {
-            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'barracks' && b.owner === aiPlayer.type);
+            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'barracks' && b.ownerIndex === aiIndex);
         } else if (['tank', 'harvester', 'mobile_flak'].includes(baseId)) {
-            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'warfactory' && b.owner === aiPlayer.type);
+            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'warfactory' && b.ownerIndex === aiIndex);
         } else if (baseId === 'helicopter') {
-            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'helipad' && b.owner === aiPlayer.type);
+            spawner = this.buildings.find(b => getBaseTypeId(b.name) === 'helipad' && b.ownerIndex === aiIndex);
         }
 
         let spawnX, spawnY;
@@ -5146,7 +5106,7 @@ class Game {
 
         // Harvester: Raffinerie zuweisen & Erntezyklus starten
         if (unit.type === 'harvester') {
-            const refinery = this.buildings.find(b => getBaseTypeId(b.name) === 'refinery' && b.owner === aiPlayer.type);
+            const refinery = this.buildings.find(b => getBaseTypeId(b.name) === 'refinery' && b.ownerIndex === aiIndex);
             if (refinery) {
                 unit.targetRefinery = refinery;
                 unit.harvesterState = 'leaving'; // Startet automatisch den Ernte-Loop
@@ -5337,7 +5297,7 @@ class Game {
             const mx = this.input.mouseX;
             const my = this.input.mouseY;
             const placement = this.getPlacementAt(mx, my, this.buildingToPlace);
-            const placementFree = this.isPlacementFree(placement, { buildingType: this.buildingToPlace, owner: 'human' }).free;
+            const placementFree = this.isPlacementFree(placement, { buildingType: this.buildingToPlace, ownerIndex: 0 }).free;
 
             for (let ty = 0; ty < placement.heightTiles; ty++) {
                 for (let tx = 0; tx < placement.widthTiles; tx++) {
@@ -5410,7 +5370,7 @@ class InputManager {
                 if (game.placementMode && game.buildingToPlace) {
                     // Linksklick im Platziermodus: grün = bauen, rot = abbrechen
                      const placement = game.getPlacementAt(this.mouseX, this.mouseY, game.buildingToPlace);
-                     const canBuild = game.isPlacementFree(placement, { buildingType: game.buildingToPlace, owner: 'human' });
+                     const canBuild = game.isPlacementFree(placement, { buildingType: game.buildingToPlace, ownerIndex: 0 });
                     const state = game.getBuildingProductionState(game.buildingToPlace.id);
                     if (canBuild.free && state.status === 'ready') {
                         game.buildStructure(placement);
@@ -5455,7 +5415,7 @@ class InputManager {
             this.isLeftMouseDown = false;
             if (game.placementMode && game.buildingToPlace) {
                 const placement = game.getPlacementAt(x, y, game.buildingToPlace);
-                const canBuild  = game.isPlacementFree(placement, { buildingType: game.buildingToPlace, owner: 'human' });
+                const canBuild  = game.isPlacementFree(placement, { buildingType: game.buildingToPlace, ownerIndex: 0 });
                 const state     = game.getBuildingProductionState(game.buildingToPlace.id);
                 if (canBuild.free && state.status === 'ready') {
                     game.buildStructure(placement);
@@ -5862,8 +5822,6 @@ function startGame() {
     // Apply config values
     game.playerColors = gameConfig.players.map(p => colorMap[p.color] || '#9e3a3a');
     game.units[0].playerColor = game.playerColors[0]; // MCV
-    console.log('Game Starting with Config:', gameConfig);
-    console.log(`Game Speed Factors: movement=${gameSpeedFactor}, production=${productionFactor}`);
 }
 
 // Initialize config modal on page load
