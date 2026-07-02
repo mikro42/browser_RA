@@ -5,31 +5,31 @@ Wer's noch nicht kennt: Ein Echtzeitstrategie-Spiel, Basis bauen, kämpfen, mit 
 Meine Art, die aktuellen Konflikte zu verarbeiten.
 
 Alles steckt in einer einzigen `.html`‑Datei und bleibt dicht am Original.  
-Die Bedienung erfolgt komplett per Linksklick.
-
-Die eigene Basis aufzubauen ist weitgehend implementiert.  
-Aktuell gibt es nur wenige Gebäude und Einheiten, aber die Abhängigkeitsketten funktionieren.  
-Erweiterungen sind leicht machbar.
-
-Gegner lassen sich im Startmenü bereits einstellen. Auf dem Spielfeld existieren sie noch nicht.  
-Eigene Einheiten besitzen ebenfalls noch keine militärischen Eigenschaften.
+Die Bedienung erfolgt hier komplett per Linksklick.
 
 ---
 ## Live-Demo
 
+v0.4 + mobile Einheiten und Gebäude haben nun militärische Eigenschaften
+<a href="https://mikro42.github.io/browser_RA/browser_RA4.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- Militärische Eigenschaften wie Panzerung, Reichweite, Schlagkraft, Schussfrequenz  sind hinzugefügt
+- Schadensstatus der Gebäude wird angezeigt
+- Repair_Facility hinzugefügt. Verkauf von Fahrzeugen (halber Neupreis) möglich
+
 v0.3 + mobile Einheiten AI Spieler auf Spielfeld (todo: noch etwas verbugt)
-<a href="https://mikro42.github.io/browser_RA/browser_RA3.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
+<a href="https://mikro42.github.io/browser_RA/browser_RA3.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- Mobile Einheiten der KI Spieler werden bereitgestellt
 
 v0.2 + Basisaufbau AI Spieler
-<a href="https://mikro42.github.io/browser_RA/browser_RA2.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
+<a href="https://mikro42.github.io/browser_RA/browser_RA2.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- KI Spieler bauen ihre Basis auf
+
 
 v0.1 Basisaufbau menschlicher Spieler
-<a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA im Browser ausführen</a>
-Soweit also ein guter Startpunkt für Branches 😉
-
----
-
-## Features (bisher)
+<a href="https://mikro42.github.io/browser_RA/browser_RA.html" target="_blank">▶️ browser_RA ausführen</a>
 
 - Eine einzige HTML‑Datei
 - Bedienung vollständig per Linksklick
@@ -37,23 +37,18 @@ Soweit also ein guter Startpunkt für Branches 😉
 - Erste Gebäude und Einheiten vorhanden
 - Funktionierende Abhängigkeitsketten
 - Gegner im Startmenü auswählbar
+Soweit also ein guter Startpunkt für Branches 😉
 
 ---
 
 ## Nächste Schritte
 
-1. **Gegner‑KI**
-   - Gegner bauen ihre Basis selbstständig auf  
-   - Produktion eigener mobiler Einheiten  
-   - Verhaltenslogik für verschiedene Einheitentypen  
+2. **Militärische Eigenschaften vervollständigen**
+   - Schadensstatus mobile Einheiten
+   - Reparatur von Gebäude
+   - Strategie KI Spieler im Krisenfall: Was zuerst produzieren? (Harester, MCV, Rafinerie, mobile Einheiten)
+   - Gruppierung und Strategie mobiler Einheiten der KI Spieler (stehen aktuell nur herum)
 
-2. **Militärische Eigenschaften**
-   - Panzerung  
-   - Reichweite  
-   - Schlagkraft gegen See, Land‑Infanterie, Land‑Fahrzeuge, Luft  
-   - Schussfrequenz  
-   - Angriffsfähigkeit  
-   - Heilung & Reparatur  
 
 3. **Spielfeld vergrößern**
    - Von 32×32 auf 64×64  
