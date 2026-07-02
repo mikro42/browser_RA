@@ -66,4 +66,4 @@ Soweit also ein guter Startpunkt für Branches 😉
 
 ## Mitmachen
 
-Pull Requests, Ideen und Erweiterungen sind willkommen.  
+Pull Requests, Ideen und Erweiterungen sind willkommen. Öffne einfach ein Issue.
