@@ -16,8 +16,9 @@ v0.4 + mobile Einheiten und Gebäude haben nun militärische Eigenschaften
 - Militärische Eigenschaften wie Panzerung, Reichweite, Schlagkraft, Schussfrequenz  sind hinzugefügt
 - Schadensstatus der Gebäude wird angezeigt
 - Repair_Facility hinzugefügt. Verkauf von Fahrzeugen (halber Neupreis) möglich
+- Erkennung besiegter AI Spieler
 
-v0.3 + mobile Einheiten AI Spieler auf Spielfeld (todo: noch etwas verbugt)
+v0.3 + mobile Einheiten AI Spieler auf Spielfeld
 <a href="https://mikro42.github.io/browser_RA/browser_RA3.html" target="_blank">▶️ browser_RA ausführen</a>
 
 - Mobile Einheiten der KI Spieler werden bereitgestellt
