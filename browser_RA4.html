@@ -1359,9 +1359,9 @@
 
         update(units, buildings) {
           if (this.isDead) return;
-          
+
           // Repair Bay Docking Logic
-if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairBay && this.targetX === null) {
+          if ((this.type === "vehicle" || this.type === "harvester") && this.targetRepairBay && this.targetX === null) {
             const dock = game.getRepairBayDockPoint(this.targetRepairBay);
             const dist = Math.hypot(this.x - dock.x, this.y - dock.y);
             if (dist < 5) {
@@ -2602,7 +2602,7 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
           }
 
           if (getBaseTypeId(building.name) === "repair_bay") {
-            const dockedUnit = this.units.find(u => (u.type === 'vehicle' || u.type === 'harvester') && u.targetRepairBay === building && u.isDocked);
+            const dockedUnit = this.units.find((u) => (u.type === "vehicle" || u.type === "harvester") && u.targetRepairBay === building && u.isDocked);
             if (dockedUnit) {
               const unitTypeData = UNIT_TYPES[dockedUnit.typeKey] || {};
               const vehicleSaleValue = Math.floor((unitTypeData.cost || 0) / 2);
@@ -2611,7 +2611,7 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
               dockedUnit.deathTime = Date.now();
               dockedUnit.isDocked = false;
               dockedUnit.targetRepairBay = null;
-              this.updateUI(`Verkauft: ${unitTypeData.name || 'Vehicle'} +$${vehicleSaleValue}`);
+              this.updateUI(`Verkauft: ${unitTypeData.name || "Vehicle"} +$${vehicleSaleValue}`);
               return true;
             }
           }
@@ -2653,22 +2653,22 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
           const tileY = grid.tileY + grid.heightTiles - 2;
           return {
             x: tileX * TILE_SIZE + TILE_SIZE / 2,
-            y: tileY * TILE_SIZE + TILE_SIZE / 2
+            y: tileY * TILE_SIZE + TILE_SIZE / 2,
           };
         }
 
         processRepairBays() {
           const now = Date.now();
           for (const building of this.buildings) {
-            if (getBaseTypeId(building.name) !== 'repair_bay') continue;
-            const dockedUnit = this.units.find(u => (u.type === 'vehicle' || u.type === 'harvester') && u.targetRepairBay === building && u.isDocked);
+            if (getBaseTypeId(building.name) !== "repair_bay") continue;
+            const dockedUnit = this.units.find((u) => (u.type === "vehicle" || u.type === "harvester") && u.targetRepairBay === building && u.isDocked);
             if (dockedUnit) {
               const dt = (now - (dockedUnit.lastRepairTick || now)) / 1000;
               if (dt >= 1) {
                 dockedUnit.bruchfest = Math.min(dockedUnit.maxBruchfest, dockedUnit.bruchfest + 5);
                 dockedUnit.lastRepairTick = now;
                 // OPTISCHER REPARATUR-EFFEKT (1x pro Sekunde) - Leicht änderbar
-                this.repairEffects.push({ x: dockedUnit.x, y: dockedUnit.y - 20, life: 60, text: '+5' });
+                this.repairEffects.push({ x: dockedUnit.x, y: dockedUnit.y - 20, life: 60, text: "+5" });
               }
             }
           }
@@ -2692,10 +2692,10 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
           const allowRefineryDock = options.allowRefineryDock !== false;
 
           // Ausnahme: Repair Bay Docking für Fahrzeuge
-          if (unit.type === 'vehicle' || unit.type === 'harvester') {
+          if (unit.type === "vehicle" || unit.type === "harvester") {
             const unitOwnerIndex = unit.ownerIndex !== undefined ? unit.ownerIndex : gameConfig.players.indexOf(unit.ownerData);
-            const clickedRepairBay = this.buildings.find(b => {
-              if (getBaseTypeId(b.name) !== 'repair_bay') return false;
+            const clickedRepairBay = this.buildings.find((b) => {
+              if (getBaseTypeId(b.name) !== "repair_bay") return false;
               if (b.ownerIndex !== unitOwnerIndex) return false;
               const rect = getBuildingPixelRect(b);
               return distancePointToRect(targetX, targetY, rect) <= TILE_SIZE * 1.5;
@@ -2704,11 +2704,11 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
             if (clickedRepairBay) {
               unit.targetRepairBay = clickedRepairBay;
               const dock = this.getRepairBayDockPoint(clickedRepairBay);
-              const dockedUnit = this.units.find(u => u.type === 'vehicle' && u.targetRepairBay === clickedRepairBay && u.isDocked);
+              const dockedUnit = this.units.find((u) => u.type === "vehicle" && u.targetRepairBay === clickedRepairBay && u.isDocked);
               if (dockedUnit && dockedUnit !== unit) {
                 dockedUnit.isDocked = false;
                 dockedUnit.targetRepairBay = null;
-                
+
                 // Finde freie Zelle auf der Betonplatte (BIB) oder außerhalb
                 const full = getBuildingGridRect(clickedRepairBay);
                 const candidates = [];
@@ -2728,7 +2728,7 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
                     }
                   }
                 }
-                
+
                 let exitTarget = { x: dockedUnit.x, y: dockedUnit.y };
                 if (candidates.length > 0) {
                   candidates.sort((a, b) => Math.hypot(a.x - dockedUnit.x, a.y - dockedUnit.y) - Math.hypot(b.x - dockedUnit.x, b.y - dockedUnit.y));
@@ -2844,7 +2844,7 @@ if ((this.type === 'vehicle' || this.type === 'harvester') && this.targetRepairB
           }
 
           // Check distance constraint for Buildings and Defense menu entries
-const buildingsMenuBaseIds = ["constructionyard", "powerplant", "barracks", "refinery", "warfactory", "radar", "helipad", "repair_bay"];
+          const buildingsMenuBaseIds = ["constructionyard", "powerplant", "barracks", "refinery", "warfactory", "radar", "helipad", "repair_bay"];
           const isDefenseType = !!(buildingType && DEFENSE_TYPES[buildingType.id]);
           if (buildingType && (buildingsMenuBaseIds.includes(getBaseTypeId(buildingType.id)) || buildingsMenuBaseIds.includes(buildingType.baseId) || isDefenseType)) {
             // Check distance to other Building menu buildings, gefiltert nach dem platzierenden Owner
@@ -4267,7 +4267,7 @@ const buildingsMenuBaseIds = ["constructionyard", "powerplant", "barracks", "ref
                 clickedUnit.deathTime = Date.now();
                 clickedUnit.isDocked = false;
                 clickedUnit.targetRepairBay = null;
-                this.updateUI(`Verkauft: ${unitTypeData.name || 'Vehicle'} +$${vehicleSaleValue}`);
+                this.updateUI(`Verkauft: ${unitTypeData.name || "Vehicle"} +$${vehicleSaleValue}`);
                 sold = true;
               }
             }
@@ -4419,7 +4419,7 @@ const buildingsMenuBaseIds = ["constructionyard", "powerplant", "barracks", "ref
                 clickedUnit.deathTime = Date.now();
                 clickedUnit.isDocked = false;
                 clickedUnit.targetRepairBay = null;
-                this.updateUI(`Verkauft: ${unitTypeData.name || 'Vehicle'} +$${vehicleSaleValue}`);
+                this.updateUI(`Verkauft: ${unitTypeData.name || "Vehicle"} +$${vehicleSaleValue}`);
                 sold = true;
               }
             }
@@ -5797,17 +5797,17 @@ const buildingsMenuBaseIds = ["constructionyard", "powerplant", "barracks", "ref
         }
 
         draw() {
-          this.ctx.fillStyle = '#2b3a2b';
+          this.ctx.fillStyle = "#2b3a2b";
           this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
           // OPTISCHER REPARATUR-EFFEKT
-          this.ctx.font = 'bold 12px Arial';
-          this.ctx.textAlign = 'center';
-          this.repairEffects.forEach(e => {
+          this.ctx.font = "bold 12px Arial";
+          this.ctx.textAlign = "center";
+          this.repairEffects.forEach((e) => {
             this.ctx.fillStyle = `rgba(0, 255, 0, ${e.life / 60})`;
             this.ctx.fillText(e.text, e.x, e.y - (60 - e.life));
           });
-          this.ctx.textAlign = 'start';
+          this.ctx.textAlign = "start";
 
           this.ctx.strokeStyle = COLORS.grid;
           this.ctx.lineWidth = 1;
