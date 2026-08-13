@@ -10,6 +10,13 @@ Die Bedienung erfolgt hier komplett per Linksklick.
 ---
 ## Live-Demo
 
+v0.5 + AI State-Machine Notfallsituationen erweitert; Angriffscursor eingeführt
+<a href="https://mikro42.github.io/browser_RA/browser_RA5.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- Die AI State-Machine produziert nach jeweils höchstem Bedarf Harvester, MCV, ...
+- Wenn Einheit ausgewählt und Mauscursor über gegnerischer Einheit dann Angriffscursor.
+- Spielendeerkennung mit automatischem Wechsel ins Einstellungsmenü hinzugefügt.
+
 v0.4 + mobile Einheiten und Gebäude haben nun militärische Eigenschaften
 <a href="https://mikro42.github.io/browser_RA/browser_RA4.html" target="_blank">▶️ browser_RA ausführen</a>
 
