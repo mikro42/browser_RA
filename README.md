@@ -10,6 +10,12 @@ Die Bedienung erfolgt hier komplett per Linksklick.
 ---
 ## Live-Demo
 
+v0.6 + AI Player guppieren Einheiten zu Trupps und greifen irgendwann an.
+<a href="https://mikro42.github.io/browser_RA/browser_RA6.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- AI Player guppieren Einheiten zu Trupps und greifen irgendwann an.
+- Gebäude Radar hat jetzt eine Funktion (Vorraussetzung zur Entkoppelung von Screen und World)
+
 v0.5 + AI State-Machine Notfallsituationen erweitert; Angriffscursor eingeführt
 <a href="https://mikro42.github.io/browser_RA/browser_RA5.html" target="_blank">▶️ browser_RA ausführen</a>
 
