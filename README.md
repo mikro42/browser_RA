@@ -58,10 +58,8 @@ Soweit also ein guter Startpunkt für Branches 😉
 ## Nächste Schritte
 
 2. **Militärische Eigenschaften vervollständigen**
-   - Schadensstatus mobile Einheiten
-   - Reparatur von Gebäude
-   - Strategie KI Spieler im Krisenfall: Was zuerst produzieren? (Harester, MCV, Rafinerie, mobile Einheiten)
-   - Gruppierung und Strategie mobiler Einheiten der KI Spieler (stehen aktuell nur herum)
+   - AI Player reparieren ihre Gebäude und Harvester
+   - Gruppierung und Strategie mobiler Einheiten der KI Spieler (agieren aktuell sehr spät, aber dann zu impulsiv)
 
 
 3. **Spielfeld vergrößern**
