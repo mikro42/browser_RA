@@ -10,7 +10,7 @@ Die Bedienung erfolgt hier komplett per Linksklick.
 ---
 ## Live-Demo
 
-v0.7 + AI Player guppieren Einheiten zu Trupps und greifen irgendwann an.
+v0.7 + Großes Spielfeld, Scrollen, Zoom.
 <a href="https://mikro42.github.io/browser_RA/browser_RA7.html" target="_blank">▶️ browser_RA ausführen</a>
 
 - Spiel auf großem Spielfeld, jetzt 64x64 statt vom Browserfenster abhängig
