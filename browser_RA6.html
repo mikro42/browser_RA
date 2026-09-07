@@ -1120,6 +1120,8 @@
       // --- KONFIGURATION ---
       const TILE_SIZE = 25;
       const WORLD_SCALE = TILE_SIZE / 50;
+      const DEFENSE_LEASH_TILES = 12;
+      const TROOP_REORDER_INTERVAL_MS = 800;
       const COLORS = {
         grid: "#354535",
         selection: "rgba(0, 255, 0, 0.2)",
@@ -1131,10 +1133,10 @@
 
       // --- NPC AI GEBÄUDELISTEN (pro Fraktion, gleiche Reihenfolge) ---
       const NPC_AI_BUILD_QUEUE = {
-        1: ["powerplant_1", "refinery_1", "barracks_1", "powerplant_1", "radar_1", "pillbox_1", "warfactory_1", "powerplant_1", "refinery_1", "pillbox_1", "silo_1", "helipad_1", "powerplant_1", "pillbox_1", "silo_1", "sam_1"],
-        2: ["powerplant_2", "refinery_2", "barracks_2", "powerplant_2", "radar_2", "pillbox_2", "warfactory_2", "powerplant_2", "refinery_2", "pillbox_2", "silo_2", "helipad_2", "powerplant_2", "pillbox_2", "silo_2", "sam_2"],
-        3: ["powerplant_3", "refinery_3", "barracks_3", "powerplant_3", "radar_3", "pillbox_3", "warfactory_3", "powerplant_3", "refinery_3", "pillbox_3", "silo_3", "helipad_3", "powerplant_3", "pillbox_3", "silo_3", "sam_3"],
-        4: ["powerplant_4", "refinery_4", "barracks_4", "powerplant_4", "radar_4", "pillbox_4", "warfactory_4", "powerplant_4", "refinery_4", "pillbox_4", "silo_4", "helipad_4", "powerplant_4", "pillbox_4", "silo_4", "sam_4"],
+        1: ["powerplant_1", "refinery_1", "barracks_1", "powerplant_1", "radar_1", "pillbox_1", "warfactory_1", "powerplant_1", "refinery_1", "pillbox_1", "silo_1", "helipad_1", "powerplant_1", "pillbox_1", "silo_1", "repair_bay_1", "sam_1"],
+        2: ["powerplant_2", "refinery_2", "barracks_2", "powerplant_2", "radar_2", "pillbox_2", "warfactory_2", "powerplant_2", "refinery_2", "pillbox_2", "silo_2", "helipad_2", "powerplant_2", "pillbox_2", "silo_2", "repair_bay_2", "sam_2"],
+        3: ["powerplant_3", "refinery_3", "barracks_3", "powerplant_3", "radar_3", "pillbox_3", "warfactory_3", "powerplant_3", "refinery_3", "pillbox_3", "silo_3", "helipad_3", "powerplant_3", "pillbox_3", "silo_3", "repair_bay_3", "sam_3"],
+        4: ["powerplant_4", "refinery_4", "barracks_4", "powerplant_4", "radar_4", "pillbox_4", "warfactory_4", "powerplant_4", "refinery_4", "pillbox_4", "silo_4", "helipad_4", "powerplant_4", "pillbox_4", "silo_4", "repair_bay_4", "sam_4"],
       };
 
       const BUILDING_TYPES = {
@@ -1366,109 +1368,159 @@
         return [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
       }
 
+      // --- MIN HEAP (Priority Queue für A*) ---
+      class MinHeap {
+        constructor() {
+          this.items = [];
+        }
+
+        get size() {
+          return this.items.length;
+        }
+
+        push(node, priority) {
+          const item = { node, priority };
+          let i = this.items.length;
+          this.items.push(item);
+
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (this.items[p].priority <= item.priority) break;
+            [this.items[p], this.items[i]] = [this.items[i], this.items[p]];
+            i = p;
+          }
+        }
+
+        pop() {
+          const top = this.items[0];
+          const last = this.items.pop();
+
+          if (this.items.length > 0) {
+            this.items[0] = last;
+            let i = 0;
+            const n = this.items.length;
+
+            while (true) {
+              const l = i * 2 + 1;
+              const r = l + 1;
+              let s = i;
+
+              if (l < n && this.items[l].priority < this.items[s].priority) s = l;
+              if (r < n && this.items[r].priority < this.items[s].priority) s = r;
+
+              if (s === i) break;
+
+              [this.items[i], this.items[s]] = [this.items[s], this.items[i]];
+              i = s;
+            }
+          }
+
+          return top;
+        }
+      }
+
       // --- A* PATHFINDER ---
       class Pathfinder {
         static getGridPos(x, y) {
           return { x: Math.floor(x / TILE_SIZE), y: Math.floor(y / TILE_SIZE) };
         }
 
-        // Findet Pfad von Start (Pixel) zu Ziel (Pixel) unter Berücksichtigung von Gebäude-Blockaden
-        // options.dockTarget: {x, y} Grid-Koordinate, die als Ziel erlaubt ist, auch wenn blockiert
+        // Findet Pfad von Start (Pixel) zu Ziel (Pixel).
+        // options.blockedGrid: { cols, rows, data[] } für O(1)-Blockade-Checks.
+        // options.dockTarget: {x, y} Grid-Koordinate, die als Ziel erlaubt ist, auch wenn blockiert.
         static findPath(startX, startY, endX, endY, buildings, mapWidth, mapHeight, options = {}) {
           const startNode = this.getGridPos(startX, startY);
           const endNode = this.getGridPos(endX, endY);
+
           const allowEndInBlocked = !!options.allowEndInBlocked;
           const dockTarget = options.dockTarget || null;
+          const blockedGrid = options.blockedGrid || null;
 
-          // Grid Dimensionen
           const cols = Math.ceil(mapWidth / TILE_SIZE);
           const rows = Math.ceil(mapHeight / TILE_SIZE);
 
-          // Closed Set (Besuchte Nodes)
           const closedSet = new Set();
-
-          // Open Set (zu besuchende Nodes) mit Priority Queue simuliert durch Array Sortierung
-          let openSet = [startNode];
-
-          // CameFrom Map für Rekonstruktion
           const cameFrom = new Map();
-
-          // gScore: Kosten vom Start bis hier
           const gScore = new Map();
-          gScore.set(this.key(startNode), 0);
-
-          // fScore: Geschätzte Gesamtkosten
           const fScore = new Map();
-          fScore.set(this.key(startNode), Math.hypot(endNode.x - startNode.x, endNode.y - startNode.y));
 
-          while (openSet.length > 0) {
-            // Node mit niedrigstem fScore holen
-            openSet.sort((a, b) => {
-              const fa = fScore.get(this.key(a)) ?? Infinity;
-              const fb = fScore.get(this.key(b)) ?? Infinity;
-              return fa - fb;
-            });
+          const heap = new MinHeap();
 
-            const current = openSet.shift();
+          const startKey = this.key(startNode);
+          gScore.set(startKey, 0);
+          fScore.set(startKey, this.heuristic(startNode, endNode));
+          heap.push(startNode, this.heuristic(startNode, endNode));
 
-            // Ziel erreicht?
+          while (heap.size > 0) {
+            const current = heap.pop().node;
+            const cKey = this.key(current);
+
+            if (closedSet.has(cKey)) continue;
+            closedSet.add(cKey);
+
             if (current.x === endNode.x && current.y === endNode.y) {
               return this.reconstructPath(cameFrom, current);
             }
 
-            closedSet.add(this.key(current));
-
-            // Nachbarn
             const neighbors = [
               { x: 0, y: -1 },
               { x: 0, y: 1 },
               { x: -1, y: 0 },
-              { x: 1, y: 0 }, // 4-Richtung
-              // Diagonale könnten hier ergänzt werden, aber für RTT ist Manhattan oft besser
+              { x: 1, y: 0 },
             ];
 
-            for (let offset of neighbors) {
+            for (const offset of neighbors) {
               const neighbor = { x: current.x + offset.x, y: current.y + offset.y };
               const nKey = this.key(neighbor);
 
-              // Grenzen prüfen
               if (neighbor.x < 0 || neighbor.x >= cols || neighbor.y < 0 || neighbor.y >= rows) continue;
 
-              // Kollision mit Gebäuden
               let blocked = false;
-              for (let b of buildings) {
-                const bGrid = getBuildingBlockedGridRect(b);
-                if (neighbor.x >= bGrid.tileX && neighbor.x < bGrid.tileX + bGrid.widthTiles && neighbor.y >= bGrid.tileY && neighbor.y < bGrid.tileY + bGrid.heightTiles) {
+
+              if (blockedGrid) {
+                if (neighbor.x < 0 || neighbor.y < 0 || neighbor.x >= blockedGrid.cols || neighbor.y >= blockedGrid.rows) {
                   blocked = true;
-                  break;
+                } else {
+                  const idx = neighbor.y * blockedGrid.cols + neighbor.x;
+                  blocked = !!blockedGrid.data[idx];
+                }
+              } else {
+                for (const b of buildings) {
+                  const bGrid = getBuildingBlockedGridRect(b);
+                  if (
+                    neighbor.x >= bGrid.tileX &&
+                    neighbor.x < bGrid.tileX + bGrid.widthTiles &&
+                    neighbor.y >= bGrid.tileY &&
+                    neighbor.y < bGrid.tileY + bGrid.heightTiles
+                  ) {
+                    blocked = true;
+                    break;
+                  }
                 }
               }
 
-              // Wenn der Nachbar das spezifische Dock-Ziel ist, erlauben wir den Eintritt
               if (blocked && dockTarget && neighbor.x === dockTarget.x && neighbor.y === dockTarget.y) {
                 blocked = false;
               }
 
-              // Ziel in blockierter Zelle nur erlauben, wenn explizit freigegeben (z.B. Harvester-Dock).
               if (blocked && !(allowEndInBlocked && neighbor.x === endNode.x && neighbor.y === endNode.y)) continue;
 
               if (closedSet.has(nKey)) continue;
 
-              const tentativeG = gScore.get(this.key(current)) + 1; // Kosten immer 1 pro Kachel
+              const tentativeG = (gScore.get(cKey) ?? 0) + 1;
 
               if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
                 cameFrom.set(nKey, current);
                 gScore.set(nKey, tentativeG);
-                fScore.set(nKey, tentativeG + Math.hypot(endNode.x - neighbor.x, endNode.y - neighbor.y));
 
-                if (!openSet.some((n) => n.x === neighbor.x && n.y === neighbor.y)) {
-                  openSet.push(neighbor);
-                }
+                const f = tentativeG + this.heuristic(neighbor, endNode);
+                fScore.set(nKey, f);
+
+                heap.push(neighbor, f);
               }
             }
           }
 
-          // Kein Pfad gefunden (Direkte Linie als Fallback für sehr kurze Distanzen oder Bug-Vermeidung)
           return null;
         }
 
@@ -1476,16 +1528,21 @@
           return `${node.x},${node.y}`;
         }
 
+        static heuristic(a, b) {
+          // 4-Richtung: Manhattan ist admissible und deutlich billiger als hypot.
+          return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        }
+
         static reconstructPath(cameFrom, current) {
           const totalPath = [current];
           let cKey = this.key(current);
+
           while (cameFrom.has(cKey)) {
             current = cameFrom.get(cKey);
             cKey = this.key(current);
             totalPath.unshift(current);
           }
 
-          // Konvertiere Grid-Koordinaten zurück zu Pixel-Mittelpunkten
           return totalPath.map((n) => ({ x: n.x * TILE_SIZE + TILE_SIZE / 2, y: n.y * TILE_SIZE + TILE_SIZE / 2 }));
         }
       }
@@ -1559,6 +1616,7 @@
             this.leaveDistanceTarget = 10 * TILE_SIZE;
             this.harvesterHeading = Math.random() * Math.PI * 2;
             this.targetRefinery = null;
+            this.repairTarget = null; // AI: Ziel-RepairBay für automatische Harvester-Reparatur
             this.unloadDurationMs = 10000;
             this.unloadingUntil = 0;
             this.unloadStartMs = 0;
@@ -1740,6 +1798,9 @@
             if (this.dockTargetGrid) {
               pathOptions.dockTarget = this.dockTargetGrid;
             }
+            if (game && game.blockedGrid) {
+              pathOptions.blockedGrid = game.blockedGrid;
+            }
 
             const p = Pathfinder.findPath(this.x, this.y, this.targetX, this.targetY, buildings, window.innerWidth - 280, window.innerHeight, pathOptions);
 
@@ -1767,6 +1828,22 @@
 
           if (this.path && this.currentPathIndex < this.path.length) {
             const nextPoint = this.path[this.currentPathIndex];
+
+            // Wenn auf dem nächsten Pfadpunkt inzwischen ein Gebäude steht, Pfad verwerfen.
+            if (game && game.blockedGrid) {
+              const ng = Pathfinder.getGridPos(nextPoint.x, nextPoint.y);
+              const isDockStep = this.dockTargetGrid && ng.x === this.dockTargetGrid.x && ng.y === this.dockTargetGrid.y;
+
+              if (!this.allowEndInBlocked && !isDockStep) {
+                const idx = ng.y * game.blockedGrid.cols + ng.x;
+                if (idx >= 0 && idx < game.blockedGrid.data.length && game.blockedGrid.data[idx]) {
+                  this.path = [];
+                  this.currentPathIndex = 0;
+                  return { movedDistance: 0, reachedDestination: false };
+                }
+              }
+            }
+
             const dx = nextPoint.x - this.x;
             const dy = nextPoint.y - this.y;
             const dist = Math.hypot(dx, dy);
@@ -1934,6 +2011,86 @@
 
           this.targetRefinery = nearest;
           return nearest;
+        }
+
+        // Finde die nächstgelegene eigene Refinery mit FREIEM Dock (für Umleitung bei belegtem Ziel-Dock)
+        findFreeDockRefinery(units, buildings) {
+          const myOwnerIndex = this.ownerIndex !== undefined ? this.ownerIndex : gameConfig.players.indexOf(this.ownerData);
+          let best = null;
+          let bestDist = Infinity;
+          for (const b of buildings) {
+            if (getBaseTypeId(b.name) !== "refinery") continue;
+            if (b.ownerIndex !== myOwnerIndex) continue;
+            const dock = game.getRefineryUnloadPoint(b);
+            const dockGrid = Pathfinder.getGridPos(dock.x, dock.y);
+            const occupied = units.some((u) => {
+              if (u === this || u.isDead) return false;
+              if (getBaseTypeId(u.typeKey) !== "harvester") return false;
+              const uGrid = Pathfinder.getGridPos(u.x, u.y);
+              return uGrid.x === dockGrid.x && uGrid.y === dockGrid.y;
+            });
+            if (!occupied) {
+              const dist = Math.hypot(this.x - dock.x, this.y - dock.y);
+              if (dist < bestDist) {
+                bestDist = dist;
+                best = b;
+              }
+            }
+          }
+          return best;
+        }
+
+        // AI-Harvester: Reparatur nötig, wenn bruchfest unter 90% der Maximalwerte fällt
+        needsRepair() {
+          return this.maxBruchfest > 0 && this.bruchfest < this.maxBruchfest * 0.9;
+        }
+
+        // Finde die nächstgelegene eigene RepairBay mit FREIEM Dock (für AI-Harvester-Reparatur)
+        findFreeDockRepairBay(units, buildings) {
+          const myOwnerIndex = this.ownerIndex !== undefined ? this.ownerIndex : gameConfig.players.indexOf(this.ownerData);
+          let best = null;
+          let bestDist = Infinity;
+          for (const b of buildings) {
+            if (getBaseTypeId(b.name) !== "repair_bay") continue;
+            if (b.ownerIndex !== myOwnerIndex) continue;
+            const dock = game.getRepairBayDockPoint(b);
+            const occupied = units.some((u) => {
+              if (u === this || u.isDead) return false;
+              return u.isDocked && u.targetRepairBay === b;
+            });
+            if (!occupied) {
+              const dist = Math.hypot(this.x - dock.x, this.y - dock.y);
+              if (dist < bestDist) {
+                bestDist = dist;
+                best = b;
+              }
+            }
+          }
+          return best;
+        }
+
+        // AI-Harvester: RepairBay-Dock verlassen und frischen Erntezyklus starten (wie nach Rafinery-Entladen)
+        leaveRepairDock() {
+          this.targetRepairBay = null;
+          this.repairTarget = null;
+          this.isDocked = false;
+          this.isRepairing = false;
+          this.repairElapsed = 0;
+          this.repairLastTick = 0;
+          this.repairBlinkState = 0;
+          this.targetX = null;
+          this.targetY = null;
+          this.path = [];
+          this.currentPathIndex = 0;
+          this.allowEndInBlocked = false;
+          this.dockTargetGrid = null;
+          this.pathAfterDetour = null;
+          this.blockedFrames = 0;
+          this._lastDistToTarget = null;
+          this.harvestedDistance = 0;
+          this.leaveDistance = 0;
+          this.harvesterHeading = Math.random() * Math.PI * 2;
+          this.harvesterState = "leaving";
         }
 
         setNextHarvesterRoamTarget() {
@@ -2193,6 +2350,22 @@
             return;
           }
 
+          // AI-Rache: Trupp-Mitglieder – lastAttacker bleibt für den Trupp-Update erhalten.
+          // Nicht-Trupp-Einheiten (Fallback): individuelle Zielschaltung.
+          if (this.ownerIndex > 0 && this.lastAttacker && this.troopId === undefined) {
+            const attacker = this.lastAttacker;
+            this.lastAttacker = null;
+            if (!attacker.isDead && attacker.bruchfest > 0) {
+              const canHit = attacker.type === "building" ? this.canTargetBuilding(attacker) : this.canTarget(attacker);
+              if (canHit && attacker !== this.attackTarget) {
+                this.attackTarget = attacker;
+                this.currentTarget = attacker;
+                this.attackHoverX = null;
+                this.attackHoverY = null;
+              }
+            }
+          }
+
           const targetX = this.attackTarget.x;
           const targetY = this.attackTarget.y;
           const rangePx = this.weite * TILE_SIZE;
@@ -2413,6 +2586,30 @@
           return nearest;
         }
 
+        // Deadlock-Erkennung für Harvestern im Rückfahrt-Modus ("returning"):
+        // Merkt sich die aktuelle Spielfeldzelle; wird sie länger als eine zufällige Schwelle (8–20s,
+        // bei jedem Zellenwechsel neu gewürfelt) nicht verlassen, gilt der Harvester als deadlocked.
+        // Nur in "returning" aufrufen – nie beim Entladen ("unloading") oder Parken ("manual").
+        // Der Zufallswert verhindert dass zwei sich blockierende Harvester gleichzeitig ausweichen.
+        harvesterStuckCheck(now) {
+          const g = Pathfinder.getGridPos(this.x, this.y);
+          const key = `${g.x},${g.y}`;
+
+          if (key !== this._stuckTileKey) {
+            this._stuckTileKey = key;
+            this._stuckSince = now;
+            this._stuckThresholdMs = 8000 + Math.random() * 12000; // 8–20s
+          }
+
+          const deadlocked = now - this._stuckSince > this._stuckThresholdMs;
+          if (deadlocked) {
+            // Timer zurücksetzen, damit nach dem Ausweichmanöver neu gemessen wird
+            this._stuckTileKey = null;
+            this._stuckSince = 0;
+          }
+          return deadlocked;
+        }
+
         updateHarvester(units, buildings) {
           const now = Date.now();
           const refinery = this.resolveHarvesterRefinery(buildings);
@@ -2466,7 +2663,21 @@
               this.harvestedDistance = 0;
               this.leaveDistance = 0;
               this.harvesterHeading = Math.random() * Math.PI * 2;
-              this.harvesterState = "leaving";
+
+              // AI-Harvester: Reparatur-Check direkt nach dem Entladen (Ausfahrt aus Rafinery-Dock).
+              // Nur AI-Spieler, nur wenn bruchfest < 90% und eine eigene RepairBay mit freiem Dock existiert.
+              if (this.ownerIndex > 0 && this.needsRepair()) {
+                const repairBay = this.findFreeDockRepairBay(units, buildings);
+                if (repairBay) {
+                  this.repairTarget = repairBay;
+                  this.harvesterState = "returning_to_repair";
+                } else {
+                  this.harvesterState = "leaving"; // keine freie RepairBay → normal weiter ernten
+                }
+              } else {
+                this.harvesterState = "leaving";
+              }
+
               this.speed = this.harvesterNormalSpeed;
               this.unloadTickIndex = 0;
               this.unloadProgressMs = 0;
@@ -2496,10 +2707,47 @@
             this.allowEndInBlocked = false;
           }
 
+          // --- AI-HARVESTER REPARATUR (nur AI-Spieler) ---
+          if (this.harvesterState === "repairing") {
+            const repairBay = this.targetRepairBay;
+            // RepairBay weg oder nicht mehr angedockt → Reparatur abbrechen & ernten
+            if (!repairBay || !buildings.includes(repairBay) || !this.isDocked) {
+              this.leaveRepairDock();
+              return;
+            }
+
+            const account = game.getAccount(this.ownerIndex);
+            // Reparatur abgeschlossen ODER keine Credits für nächsten Schritt → verlassen & ernten
+            if (this.bruchfest >= this.maxBruchfest || !game.canAfford(game.getUnitRepairStepCost(this), account)) {
+              this.leaveRepairDock();
+              return;
+            }
+
+            // Sonst: weiter reparieren (processRepairBays kümmert sich) – keine Bewegung
+            return;
+          }
+
           if (this.harvesterState === "leaving" || this.harvesterState === "harvesting") {
             if (this.targetX === null || this.targetY === null) {
               this.setNextHarvesterRoamTarget();
             }
+          }
+
+          // Deadlock-Erkennung (nur Rückfahrt – nie beim Entladen oder Parken):
+          // Gleiche Spielfeldzelle länger als zufällige Schwelle (8–20s) → aktiven Bewegungsbefehl verwerfen,
+          // damit die Dock-Logik unten das Ziel neu zuweist bzw. ausweicht. Der Zufallswert verhindert dass
+          // zwei sich blockierende Harvester gleichzeitig ausweichen.
+          if (this.harvesterState === "returning" && refinery) {
+            this._harvesterDeadlocked = this.harvesterStuckCheck(now);
+            if (this._harvesterDeadlocked) {
+              this.targetX = null;
+              this.targetY = null;
+              this.path = [];
+              this.currentPathIndex = 0;
+              this.allowEndInBlocked = false;
+            }
+          } else {
+            this._harvesterDeadlocked = false;
           }
 
           if (this.harvesterState === "returning" && this.targetX === null && refinery) {
@@ -2508,30 +2756,54 @@
             const distToDock = Math.hypot(this.x - dock.x, this.y - dock.y);
             const proximityThreshold = TILE_SIZE * 2; // Nur in der Nähe prüfen
 
-            // Prüfe ob Dock bereits von anderem Harvester belegt ist
-            const dockOccupied = units.some((u) => {
+            // Prüfe ob Dock bereits von anderem Harvester belegt ist ODER ein Deadlock erkannt wurde
+            const dockOccupied = this._harvesterDeadlocked || units.some((u) => {
               if (u === this || u.isDead) return false;
               if (getBaseTypeId(u.typeKey) !== "harvester") return false;
               const uGrid = Pathfinder.getGridPos(u.x, u.y);
               return uGrid.x === dockGrid.x && uGrid.y === dockGrid.y;
             });
 
-            if (distToDock > proximityThreshold) {
-              // Weit entfernt: Einfach zum Dock fahren
-              this.setMoveTarget(dock.x, dock.y, true);
-            } else if (dockOccupied) {
-              // In der Nähe und belegt: Ausweichen in der Nähe des Docks
-              const dodgeAngle = Math.random() * Math.PI * 2;
-              const step = TILE_SIZE * 1.5;
-              const margin = TILE_SIZE * 0.6;
-              const maxX = (game?.canvas?.width ?? window.innerWidth - 280) - margin;
-              const maxY = (game?.canvas?.height ?? window.innerHeight) - margin;
-              const dodgeX = Math.max(margin, Math.min(maxX, dock.x + Math.cos(dodgeAngle) * step));
-              const dodgeY = Math.max(margin, Math.min(maxY, dock.y + Math.sin(dodgeAngle) * step));
-              this.setMoveTarget(dodgeX, dodgeY, false);
+            // Dock belegt → andere eigene Refinery mit freiem Dock suchen und umleiten
+            if (dockOccupied) {
+              const altRefinery = this.findFreeDockRefinery(units, buildings);
+              if (altRefinery && altRefinery !== refinery) {
+                this.targetRefinery = altRefinery;
+                const altDock = game.getRefineryUnloadPoint(altRefinery);
+                this.setMoveTarget(altDock.x, altDock.y, true);
+              } else if (distToDock <= proximityThreshold) {
+                // In der Nähe und belegt (keine Alternative): Ausweichen in der Nähe des Docks
+                const dodgeAngle = Math.random() * Math.PI * 2;
+                const step = TILE_SIZE * 1.5;
+                const margin = TILE_SIZE * 0.6;
+                const maxX = (game?.canvas?.width ?? window.innerWidth - 280) - margin;
+                const maxY = (game?.canvas?.height ?? window.innerHeight) - margin;
+                const dodgeX = Math.max(margin, Math.min(maxX, dock.x + Math.cos(dodgeAngle) * step));
+                const dodgeY = Math.max(margin, Math.min(maxY, dock.y + Math.sin(dodgeAngle) * step));
+                this.setMoveTarget(dodgeX, dodgeY, false);
+              } else {
+                // Weit entfernt und belegt (keine Alternative): trotzdem hinfahren (vielleicht wird es frei)
+                this.setMoveTarget(dock.x, dock.y, true);
+              }
             } else {
-              // In der Nähe und frei: Ins Dock fahren
+              // Dock frei: Ins Dock fahren
               this.setMoveTarget(dock.x, dock.y, true);
+            }
+          }
+
+          // AI-Harvester: auf freies RepairBay-Dock zu (Ziel setzen, wenn noch kein Bewegungsbefehl aktiv)
+          if (this.harvesterState === "returning_to_repair") {
+            const repairBay = this.repairTarget && buildings.includes(this.repairTarget) ? this.repairTarget : this.findFreeDockRepairBay(units, buildings);
+            if (!repairBay) {
+              this.leaveRepairDock(); // keine freie RepairBay → normal ernten
+              return;
+            }
+            this.repairTarget = repairBay;
+
+            if (this.targetX === null || this.targetY === null) {
+              const dock = game.getRepairBayDockPoint(repairBay);
+              const dockGrid = getDockGridPos(repairBay);
+              this.setMoveTarget(dock.x, dock.y, true, dockGrid);
             }
           }
 
@@ -2566,14 +2838,39 @@
               };
 
               const approachAngle = Math.atan2(originalTarget.y - this.y, originalTarget.x - this.x);
-              const side = Math.random() < 0.5 ? -1 : 1;
-              const dodgeAngle = approachAngle + (side * Math.PI) / 2;
-              const step = TILE_SIZE * 1.2;
               const margin = TILE_SIZE * 0.6;
               const maxX = (game?.canvas?.width ?? window.innerWidth - 280) - margin;
               const maxY = (game?.canvas?.height ?? window.innerHeight) - margin;
-              const dodgeX = Math.max(margin, Math.min(maxX, this.x + Math.cos(dodgeAngle) * step));
-              const dodgeY = Math.max(margin, Math.min(maxY, this.y + Math.sin(dodgeAngle) * step));
+
+              // Kandidaten: 90° links, 90° rechts, 180° zurück – erster nicht-geblockter Winkel gewinnt.
+              // In engen Sackgassen (BIB-Korridor) sind beide 90°-Richtungen durch Gebäude blockiert;
+              // der 180°-Winkel lässt den Harvester auf dem Weg zurückfahren und so Platz machen.
+              const candidates = [
+                { angle: approachAngle + Math.PI / 2, step: TILE_SIZE * 1.2 },
+                { angle: approachAngle - Math.PI / 2, step: TILE_SIZE * 1.2 },
+                { angle: approachAngle + Math.PI, step: TILE_SIZE * 3 },
+              ];
+
+              let dodgeX = null;
+              let dodgeY = null;
+              for (const c of candidates) {
+                const cx = Math.max(margin, Math.min(maxX, this.x + Math.cos(c.angle) * c.step));
+                const cy = Math.max(margin, Math.min(maxY, this.y + Math.sin(c.angle) * c.step));
+                const gp = Pathfinder.getGridPos(cx, cy);
+                if (!game.isTileBlockedByBuildingBody(gp.x, gp.y)) {
+                  dodgeX = cx;
+                  dodgeY = cy;
+                  break;
+                }
+              }
+
+              // Fallback: zufälliger 90°-Winkel (wie zuvor) falls alle Kandidaten blockiert sind
+              if (dodgeX === null) {
+                const side = Math.random() < 0.5 ? -1 : 1;
+                const dodgeAngle = approachAngle + (side * Math.PI) / 2;
+                dodgeX = Math.max(margin, Math.min(maxX, this.x + Math.cos(dodgeAngle) * TILE_SIZE * 1.2));
+                dodgeY = Math.max(margin, Math.min(maxY, this.y + Math.sin(dodgeAngle) * TILE_SIZE * 1.2));
+              }
 
               // Im Erntemodus kein Zurückkehren zum alten Ziel, falls es weiterhin blockiert ist.
               // Stattdessen wird nach dem Dodge ein neues Ziel generiert, um auf einer freien Nachbarkachel weiter zu ernten.
@@ -2636,7 +2933,7 @@
             this.setNextHarvesterRoamTarget();
           }
 
-          if (this.harvesterState === "returning" && refinery) {
+          if (this.harvesterState === "returning" && refinery && this.targetRefinery === refinery) {
             const dock = game.getRefineryUnloadPoint(refinery);
             const dockDist = Math.hypot(this.x - dock.x, this.y - dock.y);
             if (dockDist <= Math.max(4, this.speed * gameSpeedFactor + 1)) {
@@ -2651,6 +2948,40 @@
                 this.targetY = null;
                 this.allowEndInBlocked = false;
                 this._lastDistToTarget = null; // Reset beim State-Wechsel
+              }
+            }
+          }
+
+          // AI-Harvester: RepairBay-Dock erreicht? → anlegen & reparieren, oder (belegt) ernten
+          if (this.harvesterState === "returning_to_repair" && this.repairTarget) {
+            const repairBay = this.repairTarget;
+            if (!buildings.includes(repairBay)) {
+              this.leaveRepairDock();
+              return;
+            }
+
+            const dock = game.getRepairBayDockPoint(repairBay);
+            const dockDist = Math.hypot(this.x - dock.x, this.y - dock.y);
+            if (dockDist <= Math.max(4, this.speed * gameSpeedFactor + 1)) {
+              // Dock belegt? → ab hier ernten (als hätte er das Rafinery-Dock verlassen)
+              const dockOccupied = units.some((u) => {
+                if (u === this || u.isDead) return false;
+                return u.isDocked && u.targetRepairBay === repairBay;
+              });
+
+              if (!dockOccupied) {
+                // Anlegen & Reparatur starten (processRepairBays übernimmt das Heilen)
+                this.targetRepairBay = repairBay;
+                this.isDocked = true;
+                this.blockedFrames = 0;
+                this.harvesterState = "repairing";
+                this.targetX = null;
+                this.targetY = null;
+                this.path = [];
+                this.currentPathIndex = 0;
+                this.allowEndInBlocked = false;
+              } else {
+                this.leaveRepairDock();
               }
             }
           }
@@ -2756,12 +3087,29 @@
           const now = Date.now();
           const rangePx = this.weite * TILE_SIZE;
 
-          // Projektile immer zuerst verarbeiten (auch bei Attack-Move!)
+          // Projektile zuerst verarbeiten.
           for (let i = this.projectiles.length - 1; i >= 0; i--) {
             const proj = this.projectiles[i];
             if (now - proj.firedAt >= proj.travelTime) {
-              this.applyDamage(proj.target, proj.damage, proj.spread, units, buildings);
+              if (proj.target && !proj.target.isDead && proj.target.bruchfest > 0) {
+                this.applyDamage(proj.target, proj.damage, proj.spread, units, buildings);
+              }
               this.projectiles.splice(i, 1);
+            }
+          }
+
+          // AI-Rache: Bei Schaden den Verursacher merken. Trupp-Mitglieder: lastAttacker bleibt gesetzt,
+          // der Trupp-Update (checkAndSwitchToAttacker) entscheidet gruppenweise über die Zielschaltung.
+          if (this.ownerIndex > 0 && this.lastAttacker && this.troopId === undefined) {
+            const attacker = this.lastAttacker;
+            this.lastAttacker = null;
+            if (!attacker.isDead && attacker.bruchfest > 0) {
+              const canHit = attacker.type === "building" ? this.canTargetBuilding(attacker) : this.canTarget(attacker);
+              if (canHit) {
+                this.attackTarget = attacker;
+                this.currentTarget = attacker;
+                this.isAttackMove = true;
+              }
             }
           }
 
@@ -2836,14 +3184,6 @@
               });
             }
           }
-
-          for (let i = this.projectiles.length - 1; i >= 0; i--) {
-            const proj = this.projectiles[i];
-            if (now - proj.firedAt >= proj.travelTime) {
-              this.applyDamage(proj.target, proj.damage, proj.spread, units, buildings);
-              this.projectiles.splice(i, 1);
-            }
-          }
         }
 
         canTarget(unit) {
@@ -2861,6 +3201,8 @@
         applyDamage(target, damage, spread, units, buildings) {
           if (!target) return;
           if (target.bruchfest !== undefined) target.bruchfest -= damage;
+          // AI-Rache: Angreifer merken für Zielschaltung
+          if (target.ownerIndex > 0 && target.type !== "building" && !target.isDead) target.lastAttacker = this;
           const spreadPx = spread * TILE_SIZE;
           const all = [...units, ...buildings];
           for (const ent of all) {
@@ -2869,6 +3211,7 @@
             const dist = Math.hypot(target.x - ent.x, target.y - ent.y);
             if (dist <= spreadPx && ent.bruchfest !== undefined) {
               ent.bruchfest -= Math.floor(damage * 0.5);
+              if (ent.ownerIndex > 0 && ent.type !== "building" && !ent.isDead) ent.lastAttacker = this;
             }
           }
         }
@@ -3288,6 +3631,8 @@
           this.targetEnemy = null;
           this.isAttacking = false;
           this.isDefending = false;
+          this.lastEngageTime = 0;
+          this.lastEngageTarget = null;
 
           // Defense-Trupps (0 & 1): Patrouillieren VOR der Basis, nie darin.
           // Trupp 0 patrouilliert horizontal (X), Trupp 1 vertikal (Y).
@@ -3350,6 +3695,68 @@
           return Math.hypot(center.x - tx, center.y - ty);
         }
 
+        isDefenseTargetWithinLeash(target) {
+          const tp = target.x !== undefined ? { x: target.x, y: target.y } : getBuildingCenter(target);
+          if (!isFinite(tp.x) || !isFinite(tp.y)) return false;
+
+          // Ohne berechnete Patrouillenlinie keine Leash (frühe Phase / Fallback).
+          if (!this.patrolPoints) return true;
+
+          const leash = DEFENSE_LEASH_TILES * TILE_SIZE;
+
+          for (const point of this.patrolPoints) {
+            if (point && Math.hypot(point.x - tp.x, point.y - tp.y) <= leash) {
+              return true;
+            }
+          }
+
+          return false;
+        }
+
+        // Trupp-weite Zielschaltung: Wenn ein Mitglied beschossen wurde und das aktuelle Ziel
+        // ein Gebäude ist (oder kein Ziel existiert), richtet der ganze Trupp das Feuer auf den Angreifer.
+        // Gegen bereits bekämpfte Einheiten wird NICHT umgeschaltet (diese feuern selbst zurück).
+        checkAndSwitchToAttacker(game) {
+          let attacker = null;
+          for (const unit of this.aliveUnits) {
+            if (unit.lastAttacker && !unit.lastAttacker.isDead && unit.lastAttacker.bruchfest > 0) {
+              attacker = unit.lastAttacker;
+              break;
+            }
+          }
+          if (!attacker) return false;
+
+          // Nicht wechseln, wenn bereits gegen eine (zurückfeuernde) Einheit gekämpft wird
+          const fightingUnit = this.targetEnemy && !this.targetEnemy.isDead && this.targetEnemy.bruchfest > 0 && this.targetEnemy.type !== "building";
+          if (fightingUnit) {
+            for (const unit of this.aliveUnits) unit.lastAttacker = null;
+            return false;
+          }
+
+          // Kann der Trupp den Angreifer überhaupt treffen?
+          const canHit = attacker.type === "building" ? this.aliveUnits.some((u) => u.canTargetBuilding(attacker)) : this.aliveUnits.some((u) => u.canTarget(attacker));
+          if (!canHit) {
+            for (const unit of this.aliveUnits) unit.lastAttacker = null;
+            return false;
+          }
+
+          // Defense-Trupps bleiben in ihrer Leash, sonst würden sie über das Feld jagen.
+          if (this.type === "defense" && !this.isDefenseTargetWithinLeash(attacker)) {
+            for (const unit of this.aliveUnits) unit.lastAttacker = null;
+            return false;
+          }
+
+          // Ziel umstellen und Engagement-Flags setzen
+          this.targetEnemy = attacker;
+          if (this.type === "defense") {
+            this.isDefending = true;
+          } else {
+            this.isAttacking = true;
+          }
+          for (const unit of this.aliveUnits) unit.lastAttacker = null;
+          return true;
+        }
+
         update(game, now) {
           this.removeDeadUnits();
 
@@ -3362,6 +3769,12 @@
 
         updateDefense(game, now) {
           if (!this.isAlive) return;
+
+          // Trupp-weite Zielschaltung bei Beschuss (auch während Patrouille)
+          if (this.checkAndSwitchToAttacker(game)) {
+            this.engageTarget(game, this.targetEnemy);
+            return;
+          }
 
           // Defense-Trupps patrouillieren VOR der Basis – nie darin (blockiert sonst die Wege).
           // Gilt ab der ersten zugewiesenen Unit; später gelieferte Units reihen sich fließend ein.
@@ -3405,15 +3818,33 @@
             this.needsPatrolOrder = false;
           }
 
-          // Verteidigung: Wenn eigene Einheit angegriffen wird, greife Angreifer an
-          // (danach kehren die Units zur Patrouille zurück)
+          // Verteidigung: nur solange Ziel lebt und in Leash-Distanz zur Patrouillenlinie bleibt.
           if (this.isDefending && this.targetEnemy) {
-            if (this.targetEnemy.isDead || this.targetEnemy.bruchfest <= 0) {
+            const t = this.targetEnemy;
+
+            if (t.isDead || t.bruchfest <= 0 || !this.isDefenseTargetWithinLeash(t)) {
+              const oldTarget = this.targetEnemy;
+
               this.isDefending = false;
               this.targetEnemy = null;
+              this.lastEngageTarget = null;
               this.needsPatrolOrder = true;
+
+              for (const unit of this.aliveUnits) {
+                if (!unit || unit.isDead) continue;
+                if (
+                  unit.attackTarget === oldTarget ||
+                  !unit.attackTarget ||
+                  unit.attackTarget.isDead ||
+                  (unit.attackTarget.bruchfest !== undefined && unit.attackTarget.bruchfest <= 0)
+                ) {
+                  unit.attackTarget = null;
+                  unit.currentTarget = null;
+                  unit.isAttackMove = false;
+                }
+              }
             } else {
-              this.engageTarget(game, this.targetEnemy);
+              this.engageTarget(game, t);
             }
           }
         }
@@ -3448,13 +3879,38 @@
         }
 
         updateOffense(game, now) {
-          // Angriff: Wenn Ziel tot, suche neues
+          // Trupp-weite Zielschaltung bei Beschuss (vor normaler Engagement-Logik)
+          if (this.checkAndSwitchToAttacker(game)) {
+            this.engageTarget(game, this.targetEnemy);
+            return;
+          }
+
           if (this.isAttacking && this.targetEnemy) {
             if (this.targetEnemy.isDead || this.targetEnemy.bruchfest <= 0) {
+              const oldTarget = this.targetEnemy;
+
               this.isAttacking = false;
               this.targetEnemy = null;
-              // Suche nächstes Ziel
-              const nextTarget = game.findNearestEnemyForAI(this.aiIndex);
+              this.lastEngageTarget = null;
+
+              // Stale Angriffszuweisungen auflösen, damit Einheiten automatisch neue Ziele/Gebäude angreifen können.
+              for (const unit of this.aliveUnits) {
+                if (!unit || unit.isDead) continue;
+                if (
+                  unit.attackTarget === oldTarget ||
+                  !unit.attackTarget ||
+                  unit.attackTarget.isDead ||
+                  (unit.attackTarget.bruchfest !== undefined && unit.attackTarget.bruchfest <= 0)
+                ) {
+                  unit.attackTarget = null;
+                  unit.currentTarget = null;
+                  unit.isAttackMove = false;
+                }
+              }
+
+              const center = this.getCenter();
+              const nextTarget = game.findNearestEnemyForAI(this.aiIndex, center ? center.x : null, center ? center.y : null);
+
               if (nextTarget) {
                 this.targetEnemy = nextTarget;
                 this.isAttacking = true;
@@ -3463,28 +3919,90 @@
             } else {
               this.engageTarget(game, this.targetEnemy);
             }
+          } else {
+            // Kein aktives Trupp-Ziel: alte, ungültige Angriffszuweisungen auflösen.
+            if (this.lastEngageTarget) {
+              const old = this.lastEngageTarget;
+              this.lastEngageTarget = null;
+
+              for (const unit of this.aliveUnits) {
+                if (!unit || unit.isDead) continue;
+                if (
+                  unit.attackTarget === old ||
+                  !unit.attackTarget ||
+                  unit.attackTarget.isDead ||
+                  (unit.attackTarget.bruchfest !== undefined && unit.attackTarget.bruchfest <= 0)
+                ) {
+                  unit.attackTarget = null;
+                  unit.currentTarget = null;
+                  unit.isAttackMove = false;
+                }
+              }
+            }
           }
         }
 
         engageTarget(game, target) {
-          const targetX = target.x;
-          const targetY = target.y;
+          const now = Date.now();
 
-          this.aliveUnits.forEach((unit) => {
-            if (unit.type === "aircraft") {
-              unit.setFlightTarget(targetX, targetY);
-            } else {
-              const spreadX = targetX + (Math.random() - 0.5) * 40;
-              const spreadY = targetY + (Math.random() - 0.5) * 40;
-              const commandTarget = game.getValidatedMoveTarget(unit, spreadX, spreadY);
-              unit.setMoveTarget(commandTarget.x, commandTarget.y, commandTarget.allowEndInBlocked, commandTarget.dockGrid || null);
+          // Ungültiges Ziel sofort auflösen.
+          if (!target || target.isDead || (target.bruchfest !== undefined && target.bruchfest <= 0)) {
+            this.lastEngageTarget = null;
+            for (const unit of this.aliveUnits) {
+              if (!unit || unit.isDead) continue;
+              unit.attackTarget = null;
+              unit.currentTarget = null;
+              unit.isAttackMove = false;
+            }
+            return;
+          }
+
+          const sameTarget = this.lastEngageTarget === target;
+
+          // Zielflags immer aktuell halten. Das ist billig und verhindert stale Attack-Moves.
+          for (const unit of this.aliveUnits) {
+            if (!unit || unit.isDead) continue;
+            unit.attackTarget = target;
+            unit.currentTarget = target;
+            unit.isAttackMove = true;
+          }
+
+          const globalReorder = !sameTarget || now - this.lastEngageTime >= TROOP_REORDER_INTERVAL_MS;
+
+          if (globalReorder) {
+            this.lastEngageTime = now;
+            this.lastEngageTarget = target;
+          }
+
+          for (const unit of this.aliveUnits) {
+            if (!unit || unit.isDead) continue;
+
+            const distToTarget = Math.hypot(unit.x - target.x, unit.y - target.y);
+
+            // In Reichweite: nicht neu befehlen, Kampf-Logik übernimmt.
+            if (distToTarget <= unit.weite * TILE_SIZE) {
+              unit.targetX = null;
+              unit.targetY = null;
+              unit.path = [];
+              unit.currentPathIndex = 0;
+              continue;
             }
 
-            // Setze Angriffsziel
-            unit.attackTarget = target;
-            unit.isAttackMove = true;
-            unit.currentTarget = target;
-          });
+            // Bewegung nur bei Zielwechsel, Intervall oder wenn die Einheit idle außerhalb der Reichweite ist.
+            const needsMove = globalReorder || unit.targetX === null || unit.targetY === null;
+            if (!needsMove) continue;
+
+            if (unit.type === "aircraft") {
+              unit.setFlightTarget(target.x, target.y);
+              continue;
+            }
+
+            const spreadX = target.x + (Math.random() - 0.5) * 40;
+            const spreadY = target.y + (Math.random() - 0.5) * 40;
+            const commandTarget = game.getValidatedMoveTarget(unit, spreadX, spreadY);
+
+            unit.setMoveTarget(commandTarget.x, commandTarget.y, commandTarget.allowEndInBlocked, commandTarget.dockGrid || null);
+          }
         }
       }
 
@@ -3520,6 +4038,8 @@
 
           this.units = [];
           this.buildings = [];
+          this.blockedGrid = null;
+          this.blockedGridDirty = true;
           this.selectedUnits = [];
           this.selectedBuilding = null; // für Silo-Auswahl
           this.nextInfantryFormationGroupId = 1;
@@ -3685,7 +4205,65 @@
           this.canvas.width = window.innerWidth - sidebarWidth;
           this.canvas.height = window.innerHeight;
 
-          // Grid neu berechnen wenn nötig
+          // Grid neu berechnen, damit AI-Placement und Blocked Grid konsistent bleiben.
+          this.cols = Math.ceil(this.canvas.width / TILE_SIZE);
+          this.rows = Math.ceil(this.canvas.height / TILE_SIZE);
+
+          if (this.blockedGrid) {
+            this.blockedGridDirty = true;
+          }
+        }
+
+        markBuildingsChanged() {
+          this.blockedGridDirty = true;
+        }
+
+        ensureBlockedGrid() {
+          const cols = Math.max(1, Math.ceil(this.canvas.width / TILE_SIZE));
+          const rows = Math.max(1, Math.ceil(this.canvas.height / TILE_SIZE));
+
+          // Signatur über relevante Gebäude-Positionen/Typen.
+          const keys = new Set();
+          for (const b of this.buildings) {
+            if (!b || b.isDead || b.bruchfest <= 0) continue;
+            keys.add(`${b.tileX},${b.tileY},${getBaseTypeId(b.name)}`);
+          }
+
+          if (
+            this.blockedGrid &&
+            !this.blockedGridDirty &&
+            this.blockedGrid.cols === cols &&
+            this.blockedGrid.rows === rows &&
+            this.blockedGrid.keys.size === keys.size
+          ) {
+            let same = true;
+            for (const k of keys) {
+              if (!this.blockedGrid.keys.has(k)) {
+                same = false;
+                break;
+              }
+            }
+            if (same) return;
+          }
+
+          const data = new Array(cols * rows).fill(false);
+
+          for (const b of this.buildings) {
+            if (!b || b.isDead || b.bruchfest <= 0) continue;
+
+            const g = getBuildingBlockedGridRect(b);
+
+            for (let y = g.tileY; y < g.tileY + g.heightTiles; y++) {
+              if (y < 0 || y >= rows) continue;
+              for (let x = g.tileX; x < g.tileX + g.widthTiles; x++) {
+                if (x < 0 || x >= cols) continue;
+                data[y * cols + x] = true;
+              }
+            }
+          }
+
+          this.blockedGrid = { cols, rows, data, keys };
+          this.blockedGridDirty = false;
         }
 
         setupActionButtons() {
@@ -4302,6 +4880,12 @@
           return building;
         }
 
+        // Reparatur-Schritt-Kosten einer Einheit (5% des Bauwerts) – von processRepairBays & Harvester-Reparatur genutzt
+        getUnitRepairStepCost(unit) {
+          const unitTypeData = UNIT_TYPES[unit.typeKey] || {};
+          return Math.ceil((unitTypeData.cost || 500) * 0.05);
+        }
+
         processRepairBays() {
           const now = Date.now();
           for (const building of this.buildings) {
@@ -4330,9 +4914,8 @@
 
               // Kosten und Gesundheit pro Schritt (wie bei Gebäude-Reparatur: 5% pro Schritt)
               const unitTypeData = UNIT_TYPES[unit.typeKey] || {};
-              const unitCost = unitTypeData.cost || 500;
               const healthStep = Math.ceil(unit.maxBruchfest * 0.05);
-              const costStep = Math.ceil(unitCost * 0.05);
+              const costStep = this.getUnitRepairStepCost(unit);
               const stepDuration = 5000; // 5 Sekunden pro Schritt
 
               if (unit.repairElapsed >= stepDuration) {
@@ -7093,10 +7676,20 @@
         updateInfantryVirtualVehicleFollowers() {
           const groups = new Map();
           for (const unit of this.units) {
-            if (unit.type !== "infantry" || unit.formationGroupId === null) continue;
+            if (unit.type !== "infantry") continue;
+
+            // AI-Infanterie nicht im menschlichen Follow-System bewegen.
+            if (unit.ownerIndex !== 0) {
+              this.clearInfantryFormation(unit);
+              continue;
+            }
+
+            if (unit.formationGroupId === null) continue;
+
             if (!groups.has(unit.formationGroupId)) {
               groups.set(unit.formationGroupId, { leader: null, members: [] });
             }
+
             const group = groups.get(unit.formationGroupId);
             group.members.push(unit);
             if (unit.formationIsLeader) group.leader = unit;
@@ -7126,9 +7719,16 @@
         }
 
         regroupIdleInfantryAtDestination() {
+          // AI-Formationen auflösen, damit AI-Einheiten nicht im Follow-State eingefroren bleiben.
+          for (const unit of this.units) {
+            if (unit.type === "infantry" && unit.ownerIndex !== 0) {
+              this.clearInfantryFormation(unit);
+            }
+          }
+
           const movingGroupIds = new Set();
           for (const unit of this.units) {
-            if (unit.type !== "infantry" || unit.formationGroupId === null) continue;
+            if (unit.type !== "infantry" || unit.ownerIndex !== 0 || unit.formationGroupId === null) continue;
             if (unit.formationIsLeader && unit.targetX !== null && unit.targetY !== null) {
               movingGroupIds.add(unit.formationGroupId);
             }
@@ -7136,6 +7736,7 @@
 
           const isUnitIdleForRegroup = (unit) => {
             if (unit.type !== "infantry") return false;
+            if (unit.ownerIndex !== 0) return false; // Nur menschliche Infanterie regroupen.
             if (!unit.regroupOnArrival) return false;
             if (unit.targetX !== null || unit.targetY !== null) return false;
             if (unit.formationGroupId !== null && movingGroupIds.has(unit.formationGroupId)) return false;
@@ -7210,7 +7811,13 @@
 
         pushBarracksBlockingInfantry(spawnX, spawnY) {
           const spawnTile = Pathfinder.getGridPos(spawnX, spawnY);
-          const blockers = this.units.filter((unit) => unit.type === "infantry" && Math.floor(unit.x / TILE_SIZE) === spawnTile.x && Math.floor(unit.y / TILE_SIZE) === spawnTile.y);
+          const blockers = this.units.filter(
+            (unit) =>
+              unit.type === "infantry" &&
+              unit.ownerIndex === 0 &&
+              Math.floor(unit.x / TILE_SIZE) === spawnTile.x &&
+              Math.floor(unit.y / TILE_SIZE) === spawnTile.y,
+          );
 
           if (blockers.length < 5) return;
 
@@ -8264,9 +8871,19 @@
         }
 
         enforceInfantryTileCapacity() {
+          // AI-Infanterie nicht in das menschliche Formationssystem einbinden.
+          // Alte AI-Formationen aktiv auflösen, damit Follower wieder normal kämpfen können.
+          for (const unit of this.units) {
+            if (unit.type !== "infantry") continue;
+            if (unit.ownerIndex !== 0) {
+              this.clearInfantryFormation(unit);
+              continue;
+            }
+          }
+
           const movingGroupIds = new Set();
           for (const unit of this.units) {
-            if (unit.type !== "infantry" || unit.formationGroupId === null) continue;
+            if (unit.type !== "infantry" || unit.ownerIndex !== 0 || unit.formationGroupId === null) continue;
             if (unit.formationIsLeader && unit.targetX !== null && unit.targetY !== null) {
               movingGroupIds.add(unit.formationGroupId);
             }
@@ -8274,7 +8891,7 @@
 
           const groupsByTile = new Map();
           for (const unit of this.units) {
-            if (unit.type !== "infantry") continue;
+            if (unit.type !== "infantry" || unit.ownerIndex !== 0) continue;
             if (unit.targetX !== null || unit.targetY !== null) continue;
             if (unit.formationGroupId !== null && movingGroupIds.has(unit.formationGroupId)) continue;
 
@@ -8934,6 +9551,7 @@
           }
 
           const now = Date.now();
+          this.ensureBlockedGrid();
           const currentMinute = Math.floor((now - this.startTime) / 60000);
           if (currentMinute > this.lastStatsMinute) {
             for (let i = 0; i < this.playerStats.length; i++) {
@@ -9002,6 +9620,8 @@
             return !(u.isDead && now - u.deathTime > 5000);
           });
 
+          const buildingsBeforeFilter = this.buildings.length;
+
           this.buildings = this.buildings.filter((b) => {
             if (b.bruchfest <= 0) {
               const ownerIdx = b.ownerIndex;
@@ -9022,6 +9642,11 @@
             }
             return true;
           });
+
+          if (this.buildings.length !== buildingsBeforeFilter) {
+            this.markBuildingsChanged();
+          }
+
           this.updateProductionTabs();
 
           // Prüfe ob AI Spieler besiegt sind
@@ -9041,6 +9666,7 @@
             if (!typeData || typeData.schaden <= 0) continue;
 
             const rangePx = typeData.weite * TILE_SIZE;
+            const rangeSq = rangePx * rangePx;
             const center = getBuildingCenter(building);
 
             // Finde Ziel
@@ -9051,8 +9677,10 @@
                 if (unit.isDead || unit.bruchfest <= 0) continue;
                 if (unit.ownerIndex === building.ownerIndex) continue;
                 if (building.ownerData?.team_id && unit.ownerData?.team_id && building.ownerData.team_id === unit.ownerData.team_id) continue;
-                const dist = Math.hypot(center.x - unit.x, center.y - unit.y);
-                if (dist <= rangePx && this.canTargetBuildingUnit(typeData, unit)) {
+
+                const dx = center.x - unit.x;
+                const dy = center.y - unit.y;
+                if (dx * dx + dy * dy <= rangeSq && this.canTargetBuildingUnit(typeData, unit)) {
                   building.currentTarget = unit;
                   break;
                 }
@@ -9063,9 +9691,12 @@
                   if (otherBuilding.isDead || otherBuilding.bruchfest <= 0) continue;
                   if (otherBuilding.ownerIndex === building.ownerIndex) continue;
                   if (building.ownerData?.team_id && otherBuilding.ownerData?.team_id && building.ownerData.team_id === otherBuilding.ownerData.team_id) continue;
+
                   const otherCenter = getBuildingCenter(otherBuilding);
-                  const dist = Math.hypot(center.x - otherCenter.x, center.y - otherCenter.y);
-                  if (dist <= rangePx && (typeData.ziele & 4) !== 0) {
+                  const dx = center.x - otherCenter.x;
+                  const dy = center.y - otherCenter.y;
+
+                  if (dx * dx + dy * dy <= rangeSq && (typeData.ziele & 4) !== 0) {
                     building.currentTarget = otherBuilding;
                     break;
                   }
@@ -9076,8 +9707,10 @@
             // Feuern
             if (building.currentTarget) {
               const targetCenter = building.currentTarget.x !== undefined ? { x: building.currentTarget.x, y: building.currentTarget.y } : getBuildingCenter(building.currentTarget);
-              const dist = Math.hypot(center.x - targetCenter.x, center.y - targetCenter.y);
-              if (dist > rangePx) {
+              const tdx = center.x - targetCenter.x;
+              const tdy = center.y - targetCenter.y;
+
+              if (tdx * tdx + tdy * tdy > rangeSq) {
                 building.currentTarget = null;
                 continue;
               }
@@ -9124,6 +9757,8 @@
         applyBuildingDamage(sourceBuilding, target, damage, spread) {
           if (!target) return;
           if (target.bruchfest !== undefined) target.bruchfest -= damage;
+          // AI-Rache: Angreifer-Gebäude merken für Zielschaltung
+          if (target.ownerIndex > 0 && target.type !== "building" && !target.isDead) target.lastAttacker = sourceBuilding;
           const spreadPx = spread * TILE_SIZE;
           const targetCenter = target.x !== undefined ? { x: target.x, y: target.y } : getBuildingCenter(target);
           const all = [...this.units, ...this.buildings];
@@ -9134,6 +9769,7 @@
             const dist = Math.hypot(targetCenter.x - entCenter.x, targetCenter.y - entCenter.y);
             if (dist <= spreadPx && ent.bruchfest !== undefined) {
               ent.bruchfest -= Math.floor(damage * 0.5);
+              if (ent.ownerIndex > 0 && ent.type !== "building" && !ent.isDead) ent.lastAttacker = sourceBuilding;
             }
           }
         }
@@ -9282,36 +9918,71 @@
           }
         }
 
-        // Finde nächstgelegenen Feind für AI-Player (Einheit oder Gebäude)
-        findNearestEnemyForAI(aiIndex) {
+        // Finde nächstgelegenen Feind für AI-Player (Einheit oder Gebäude).
+        // fromX/fromY optional: z. B. Truppzentrum. Ohne Parameter wird Zentrum der lebenden AI-Einheiten verwendet.
+        findNearestEnemyForAI(aiIndex, fromX = null, fromY = null) {
           const aiPlayer = gameConfig.players[aiIndex];
           const aiTeamId = aiPlayer.team_id;
-          let nearest = null;
-          let nearestDist = Infinity;
 
-          // Prüfe feindliche Einheiten
+          let refX;
+          let refY;
+
+          if (fromX === null || fromY === null) {
+            let cx = 0;
+            let cy = 0;
+            let count = 0;
+
+            for (const u of this.units) {
+              if (u.ownerIndex !== aiIndex || u.isDead || u.bruchfest <= 0) continue;
+              cx += u.x;
+              cy += u.y;
+              count++;
+            }
+
+            if (count > 0) {
+              refX = cx / count;
+              refY = cy / count;
+            } else {
+              refX = this.canvas.width / 2;
+              refY = this.canvas.height / 2;
+            }
+          } else {
+            refX = fromX;
+            refY = fromY;
+          }
+
+          let nearest = null;
+          let nearestDistSq = Infinity;
+
+          // Feindliche Einheiten
           for (const unit of this.units) {
             if (unit.isDead || unit.bruchfest <= 0) continue;
             if (unit.ownerIndex === aiIndex) continue;
             if (unit.ownerData?.team_id && unit.ownerData.team_id === aiTeamId) continue;
 
-            const dist = Math.hypot(unit.x - (this.units.find((u) => u.ownerIndex === aiIndex && !u.isDead)?.x || 0), unit.y - (this.units.find((u) => u.ownerIndex === aiIndex && !u.isDead)?.y || 0));
-            if (dist < nearestDist) {
-              nearestDist = dist;
+            const dx = unit.x - refX;
+            const dy = unit.y - refY;
+            const dSq = dx * dx + dy * dy;
+
+            if (dSq < nearestDistSq) {
+              nearestDistSq = dSq;
               nearest = unit;
             }
           }
 
-          // Prüfe feindliche Gebäude
+          // Feindliche Gebäude
           for (const building of this.buildings) {
             if (building.isDead || building.bruchfest <= 0) continue;
             if (building.ownerIndex === aiIndex) continue;
             if (building.ownerData?.team_id && building.ownerData.team_id === aiTeamId) continue;
 
             const center = getBuildingCenter(building);
-            const dist = Math.hypot(center.x - (this.units.find((u) => u.ownerIndex === aiIndex && !u.isDead)?.x || 0), center.y - (this.units.find((u) => u.ownerIndex === aiIndex && !u.isDead)?.y || 0));
-            if (dist < nearestDist) {
-              nearestDist = dist;
+            const dx = center.x - refX;
+            const dy = center.y - refY;
+            const dSq = dx * dx + dy * dy;
+
+            if (dSq < nearestDistSq) {
+              nearestDistSq = dSq;
               nearest = building;
             }
           }
@@ -9510,9 +10181,6 @@
             if (!aiState || !aiState.troops) continue;
             if (gameConfig.players[aiIndex].type === "Open") continue;
 
-            // Prüfe ob Verteidigungstrupps angreifen sollen (wenn eigene Einheit angegriffen wird)
-            this.checkDefenseTroopEngagement(aiIndex);
-
             // Prüfe ob Angriffstrupps angreifen sollen
             this.checkOffenseTroopEngagement(aiIndex);
 
@@ -9523,58 +10191,39 @@
           }
         }
 
-        // Prüfe ob Verteidigungstrupps (0 & 1) einen Angreifer bekämpfen sollen
-        checkDefenseTroopEngagement(aiIndex) {
-          const aiState = this.npcAiState[aiIndex];
-          if (!aiState || !aiState.troops) return;
 
-          // Finde alle angegriffenen eigenen Einheiten
-          const attackedUnits = this.units.filter((u) => {
-            if (u.ownerIndex !== aiIndex) return false;
-            if (u.isDead || u.bruchfest <= 0) return false;
-            if (u.currentTarget && u.currentTarget.ownerIndex !== aiIndex) return true;
-            return false;
-          });
-
-          if (attackedUnits.length === 0) return;
-
-          // Finde nächstgelegenen Verteidigungstrupp zum Angriffspunkt
-          const defenseTroops = aiState.troops.filter((t) => t.type === "defense" && t.isAlive && !t.isDefending);
-          if (defenseTroops.length === 0) return;
-
-          // Verwende die Position der ersten angegriffenen Einheit als Referenz
-          const attackPoint = attackedUnits[0];
-          let nearestTroop = null;
-          let nearestDist = Infinity;
-
-          defenseTroops.forEach((troop) => {
-            const dist = troop.distanceTo(attackPoint.x, attackPoint.y);
-            if (dist < nearestDist) {
-              nearestDist = dist;
-              nearestTroop = troop;
-            }
-          });
-
-          if (nearestTroop) {
-            // Finde den Angreifer
-            const attacker = attackPoint.currentTarget;
-            if (attacker) {
-              nearestTroop.isDefending = true;
-              nearestTroop.targetEnemy = attacker;
-            }
-          }
-        }
-
-        // Prüfe ob Angriffstrupps (2-5) angreifen sollen
+        // Prüfe ob Angriffstrupps (2-5) angreifen sollen.
         checkOffenseTroopEngagement(aiIndex) {
           const aiState = this.npcAiState[aiIndex];
           if (!aiState || !aiState.troops) return;
 
+          const pairTarget = (t1, t2) => {
+            const c1 = t1.getCenter();
+            const c2 = t2.getCenter();
+
+            let fx = null;
+            let fy = null;
+
+            if (c1 && c2) {
+              fx = (c1.x + c2.x) / 2;
+              fy = (c1.y + c2.y) / 2;
+            } else if (c1) {
+              fx = c1.x;
+              fy = c1.y;
+            } else if (c2) {
+              fx = c2.x;
+              fy = c2.y;
+            }
+
+            return this.findNearestEnemyForAI(aiIndex, fx, fy);
+          };
+
           // Trupps 2 & 3: Wenn beide voll, greifen an
           const troop2 = aiState.troops[2];
           const troop3 = aiState.troops[3];
+
           if (troop2 && troop3 && troop2.isFull && troop3.isFull && !troop2.isAttacking && !troop3.isAttacking) {
-            const target = this.findNearestEnemyForAI(aiIndex);
+            const target = pairTarget(troop2, troop3);
             if (target) {
               troop2.isAttacking = true;
               troop2.targetEnemy = target;
@@ -9586,8 +10235,9 @@
           // Trupps 4 & 5: Wenn beide voll, greifen an
           const troop4 = aiState.troops[4];
           const troop5 = aiState.troops[5];
+
           if (troop4 && troop5 && troop4.isFull && troop5.isFull && !troop4.isAttacking && !troop5.isAttacking) {
-            const target = this.findNearestEnemyForAI(aiIndex);
+            const target = pairTarget(troop4, troop5);
             if (target) {
               troop4.isAttacking = true;
               troop4.targetEnemy = target;
