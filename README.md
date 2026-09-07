@@ -10,6 +10,13 @@ Die Bedienung erfolgt hier komplett per Linksklick.
 ---
 ## Live-Demo
 
+v0.7 + AI Player guppieren Einheiten zu Trupps und greifen irgendwann an.
+<a href="https://mikro42.github.io/browser_RA/browser_RA7.html" target="_blank">▶️ browser_RA ausführen</a>
+
+- Spiel auf großem Spielfeld, jetzt 64x64 statt vom Browserfenster abhängig
+- Scrollen und Klick ins Radar zur Positionierung der Kamera
+- Zoom des Spielfeldes
+
 v0.6 + AI Player guppieren Einheiten zu Trupps und greifen irgendwann an.
 <a href="https://mikro42.github.io/browser_RA/browser_RA6.html" target="_blank">▶️ browser_RA ausführen</a>
 
